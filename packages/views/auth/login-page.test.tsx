@@ -369,6 +369,66 @@ describe("LoginPage", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Lark Suite OAuth
+  // -------------------------------------------------------------------------
+
+  it("renders Lark OAuth button when lark prop provided", () => {
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        lark={{ appId: "cli_abc", redirectUri: "http://localhost/lcb" }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /continue with lark/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Lark OAuth button when lark prop omitted", () => {
+    render(<LoginPage onSuccess={onSuccess} />);
+    expect(
+      screen.queryByRole("button", { name: /continue with lark/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("builds Lark authorize URL with required scopes on click", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const originalLocation = window.location;
+    // jsdom blocks assigning through window.location, but we can replace it
+    // with a writable stub for the duration of the test.
+    // @ts-expect-error — deliberately narrow
+    delete window.location;
+    // @ts-expect-error — minimal stub
+    window.location = { href: "", origin: "http://localhost" };
+
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        lark={{
+          appId: "cli_abc",
+          redirectUri: "http://localhost/lcb",
+          state: "platform:desktop",
+        }}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /continue with lark/i }),
+    );
+
+    expect(window.location.href).toContain(
+      "accounts.larksuite.com/open-apis/authen/v1/authorize",
+    );
+    expect(window.location.href).toContain("app_id=cli_abc");
+    expect(window.location.href).toContain(
+      "scope=contact%3Auser.base%3Areadonly+contact%3Auser.email%3Areadonly",
+    );
+    expect(window.location.href).toContain("state=platform%3Adesktop");
+
+    // @ts-expect-error — restore
+    window.location = originalLocation;
+  });
+
+  // -------------------------------------------------------------------------
   // CLI callback — existing session
   // -------------------------------------------------------------------------
 

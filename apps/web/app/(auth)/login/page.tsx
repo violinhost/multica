@@ -57,6 +57,7 @@ function LoginPageContent() {
   const router = useRouter();
   const qc = useQueryClient();
   const googleClientId = useConfigStore((state) => state.googleClientId);
+  const larkAppId = useConfigStore((state) => state.larkAppId);
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const searchParams = useSearchParams();
@@ -122,9 +123,9 @@ function LoginPageContent() {
     router.push(dest);
   };
 
-  // Build Google OAuth state: encode platform + next URL so the callback
-  // can redirect to the right place after login.
-  const googleState = [
+  // Build OAuth state (shared by Google + Lark): encode platform + next URL
+  // so the callback can redirect to the right place after login.
+  const oauthState = [
     platform === "desktop" ? "platform:desktop" : "",
     nextUrl ? `next:${nextUrl}` : "",
   ]
@@ -185,7 +186,16 @@ function LoginPageContent() {
           ? {
               clientId: googleClientId,
               redirectUri: `${window.location.origin}/auth/callback`,
-              state: googleState,
+              state: oauthState,
+            }
+          : undefined
+      }
+      lark={
+        larkAppId
+          ? {
+              appId: larkAppId,
+              redirectUri: `${window.location.origin}/auth/lark/callback`,
+              state: oauthState,
             }
           : undefined
       }
