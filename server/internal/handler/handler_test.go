@@ -855,6 +855,105 @@ func TestUpdateIssueAllowsExplicitUnassign(t *testing.T) {
 	}
 }
 
+func TestListIssuesProjectFilterExcludesNullProjectIssues(t *testing.T) {
+	var projectID, withProjectID, withoutProjectID string
+	defer func() {
+		for _, issueID := range []string{withProjectID, withoutProjectID} {
+			if issueID == "" {
+				continue
+			}
+			req := newRequest("DELETE", "/api/issues/"+issueID, nil)
+			req = withURLParam(req, "id", issueID)
+			testHandler.DeleteIssue(httptest.NewRecorder(), req)
+		}
+		if projectID != "" {
+			req := newRequest("DELETE", "/api/projects/"+projectID, nil)
+			req = withURLParam(req, "id", projectID)
+			testHandler.DeleteProject(httptest.NewRecorder(), req)
+		}
+	}()
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "Project filter regression project",
+	})
+	testHandler.CreateProject(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateProject: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+	projectID = project.ID
+
+	w = httptest.NewRecorder()
+	req = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title":      "Issue attached to project",
+		"project_id": projectID,
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIssue with project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var withProject IssueResponse
+	json.NewDecoder(w.Body).Decode(&withProject)
+	withProjectID = withProject.ID
+	if withProject.ProjectID == nil || *withProject.ProjectID != projectID {
+		t.Fatalf("CreateIssue with project: expected project_id %q, got %v", projectID, withProject.ProjectID)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "Issue with null project",
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIssue without project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var withoutProject IssueResponse
+	json.NewDecoder(w.Body).Decode(&withoutProject)
+	withoutProjectID = withoutProject.ID
+	if withoutProject.ProjectID != nil {
+		t.Fatalf("CreateIssue without project: expected nil project_id, got %v", withoutProject.ProjectID)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest("GET", "/api/issues?workspace_id="+testWorkspaceID+"&project_id="+projectID, nil)
+	testHandler.ListIssues(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListIssues with project filter: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var listResp struct {
+		Issues []IssueResponse `json:"issues"`
+		Total  int             `json:"total"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&listResp); err != nil {
+		t.Fatalf("ListIssues decode: %v", err)
+	}
+	if len(listResp.Issues) == 0 {
+		t.Fatal("ListIssues with project filter: expected at least 1 issue")
+	}
+
+	var sawWithProject, sawWithoutProject bool
+	for _, issue := range listResp.Issues {
+		if issue.ID == withProjectID {
+			sawWithProject = true
+		}
+		if issue.ID == withoutProjectID {
+			sawWithoutProject = true
+		}
+		if issue.ProjectID == nil || *issue.ProjectID != projectID {
+			t.Fatalf("ListIssues with project filter: returned issue %s with unexpected project_id %v", issue.ID, issue.ProjectID)
+		}
+	}
+	if !sawWithProject {
+		t.Fatal("ListIssues with project filter: expected attached issue to be returned")
+	}
+	if sawWithoutProject {
+		t.Fatal("ListIssues with project filter: null-project issue should not be returned")
+	}
+}
+
 func TestCommentCRUD(t *testing.T) {
 	// Create an issue first
 	w := httptest.NewRecorder()

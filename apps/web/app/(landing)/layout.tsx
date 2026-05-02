@@ -20,8 +20,8 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "Organization",
-      name: "Multica",
-      url: "https://www.multica.ai",
+      name: "Velafi",
+      url: "https://velafi.ai",
       sameAs: ["https://github.com/multica-ai/multica"],
     },
     {

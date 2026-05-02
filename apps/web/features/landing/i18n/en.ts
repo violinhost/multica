@@ -14,7 +14,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headlineLine2: "won\u2019t be human.",
     subheading:
       "Multica is an open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
-    cta: "Start free trial",
+    cta: "Open Dashboard",
     downloadDesktop: "Download Desktop",
     worksWith: "Works with",
     imageAlt: "Multica board view \u2014 issues managed by humans and agents",
@@ -116,7 +116,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   },
 
   howItWorks: {
-    label: "Get started",
+    label: "How it works",
     headlineMain: "Hire your first AI employee",
     headlineFaded: "in the next hour.",
     steps: [
@@ -142,7 +142,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Pick your agent from the assignee dropdown \u2014 just like assigning to a teammate. The task is queued, claimed, and executed automatically. Watch progress in real time.",
       },
     ],
-    cta: "Get started",
+    cta: "Open Dashboard",
     ctaGithub: "View on GitHub",
     ctaDocs: "Read the docs",
   },
@@ -219,7 +219,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   footer: {
     tagline:
       "Project management for human + agent teams. Open source, self-hostable, built for the future of work.",
-    cta: "Get started",
+    cta: "Open Dashboard",
     groups: {
       product: {
         label: "Product",
@@ -235,7 +235,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "Documentation", href: "/docs" },
           { label: "API", href: githubUrl },
-          { label: "X (Twitter)", href: "https://x.com/MulticaAI" },
+          { label: "Velafi", href: "https://velafi.ai" },
         ],
       },
       company: {

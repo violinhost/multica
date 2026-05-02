@@ -47,9 +47,13 @@ export function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // --- Root path: redirect logged-in users to their last workspace ---
+  // --- Root path: login-first entry ---
   if (pathname === "/") {
-    if (!hasSession) return NextResponse.next();
+    if (!hasSession) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
 
     if (lastSlug) {
       const url = req.nextUrl.clone();
@@ -57,8 +61,9 @@ export function proxy(req: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // No last_workspace_slug cookie → let landing page pick the first workspace
-    // client-side (features/landing/components/redirect-if-authenticated.tsx).
+    // Logged-in but no last_workspace_slug cookie yet (first login / cookie
+    // cleared) — let the root page resolve the correct post-auth destination
+    // client-side.
     return NextResponse.next();
   }
 
