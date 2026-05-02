@@ -6,11 +6,13 @@ interface ConfigState {
   allowSignup: boolean;
   oidcIssuerURL: string;
   oidcClientID: string;
+  oidcAuthorizationEndpoint: string;
   setCdnDomain: (domain: string) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
     oidcIssuerURL?: string;
     oidcClientID?: string;
+    oidcAuthorizationEndpoint?: string;
   }) => void;
 }
 
@@ -19,9 +21,20 @@ export const configStore = createStore<ConfigState>((set) => ({
   allowSignup: true,
   oidcIssuerURL: "",
   oidcClientID: "",
+  oidcAuthorizationEndpoint: "",
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
-  setAuthConfig: ({ allowSignup, oidcIssuerURL = "", oidcClientID = "" }) =>
-    set({ allowSignup, oidcIssuerURL, oidcClientID }),
+  setAuthConfig: ({
+    allowSignup,
+    oidcIssuerURL = "",
+    oidcClientID = "",
+    oidcAuthorizationEndpoint = "",
+  }) =>
+    set({
+      allowSignup,
+      oidcIssuerURL,
+      oidcClientID,
+      oidcAuthorizationEndpoint,
+    }),
 }));
 
 export function useConfigStore(): ConfigState;

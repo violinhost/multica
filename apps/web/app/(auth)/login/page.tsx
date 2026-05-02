@@ -22,18 +22,46 @@ import {
 } from "@multica/ui/components/ui/card";
 import { Button } from "@multica/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { captureDownloadIntent } from "@multica/core/analytics";
 import { setLoggedInCookie } from "@/features/auth/auth-cookie";
-import Link from "next/link";
 import { LoginPage, validateCliCallback } from "@multica/views/auth";
+import { CliConfirm } from "./cli-confirm";
 
 /**
- * Pick where a logged-in user with no explicit `?next=` should land.
- * Un-onboarded users with pending invitations on their email get routed to
- * the batch /invitations page; everyone else falls through to the standard
- * resolver. A network blip on listMyInvitations is non-fatal — we fall
- * through rather than trap the user on an error screen.
+ * Velafi /login: redirect-only OIDC entry point.
+ *
+ * Default behaviour: redirect any unauthenticated visitor straight to the
+ * Authentik authorize endpoint — no email form, no SSO button, no UI to
+ * maintain. The user sees a brief spinner, then Authentik. After OIDC
+ * succeeds, the callback page sets the cookie and routes the user to the
+ * post-auth destination.
+ *
+ * Three branches deviate from the default:
+ *
+ *   1. ?cli_callback=… (with a valid localhost / RFC-1918 host) — the
+ *      multica CLI / daemon-bootstrap loopback flow. If the user is
+ *      already authenticated we render <CliConfirm/> for explicit
+ *      consent; otherwise we redirect to OIDC with the cli_callback URL
+ *      preserved in the OIDC state's `next:` directive, so the post-auth
+ *      callback brings the user back here logged in and CliConfirm picks up.
+ *
+ *   2. ?force=email — rescue path for when Authentik is down or admins
+ *      need the legacy email verify-code flow. Renders the upstream
+ *      <LoginPage/> with no `oidc` prop, so it shows email + Continue
+ *      only. Backend gating on LOGIN_METHODS=oidc rejects /auth/send-code
+ *      anyway, so ops must also flip LOGIN_METHODS to enable email
+ *      backend before this rescue can succeed (deliberate two-key
+ *      activation).
+ *
+ *   3. ?platform=desktop (without cli_callback) and the user already
+ *      has a session — mints a CLI token and hands off via multica://
+ *      deep link, just like the original implementation.
+ *
+ * The fork delta vs upstream: this file is a full rewrite (delete-vs-modify
+ * conflict on rebase, easy to resolve by keeping ours), and packages/views
+ * LoginPage stays upstream-pristine. Per FORK_MAINTENANCE.md §1 this is the
+ * lowest-conflict-surface arrangement we found.
  */
+
 async function resolveLoggedInDestination(
   qc: QueryClient,
   hasOnboarded: boolean,
@@ -47,45 +75,58 @@ async function resolveLoggedInDestination(
         return paths.invitations();
       }
     } catch {
-      // fall through
+      /* non-fatal — fall through */
     }
   }
   return resolvePostAuthDestination(workspaces, hasOnboarded);
 }
 
+function buildOIDCAuthorizeURL(
+  authorizationEndpoint: string,
+  clientID: string,
+  redirectUri: string,
+  state: string | undefined,
+): string {
+  const params = new URLSearchParams({
+    client_id: clientID,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+  });
+  if (state) params.set("state", state);
+  const sep = authorizationEndpoint.includes("?") ? "&" : "?";
+  return `${authorizationEndpoint}${sep}${params}`;
+}
+
 function LoginPageContent() {
   const router = useRouter();
   const qc = useQueryClient();
-  const oidcIssuerURL = useConfigStore((state) => state.oidcIssuerURL);
-  const oidcClientID = useConfigStore((state) => state.oidcClientID);
+  const oidcAuthorizationEndpoint = useConfigStore(
+    (s) => s.oidcAuthorizationEndpoint,
+  );
+  const oidcClientID = useConfigStore((s) => s.oidcClientID);
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const searchParams = useSearchParams();
+  const hasOnboarded = useHasOnboarded();
 
   const cliCallbackRaw = searchParams.get("cli_callback");
   const cliState = searchParams.get("cli_state") || "";
   const platform = searchParams.get("platform");
-  const isDesktopHandoff = platform === "desktop" && !cliCallbackRaw;
-  // `next` carries a protected URL the user was originally headed to
-  // (e.g. /invite/{id}). With URL-driven workspaces there is no legacy
-  // "/issues" default — if `next` is absent we decide after login based on
-  // the user's workspace list. Sanitize first so a crafted `?next=https://evil`
-  // cannot bounce the user off-origin after a successful login.
+  const forceEmail = searchParams.get("force") === "email";
+  const cliPath =
+    cliCallbackRaw != null && validateCliCallback(cliCallbackRaw);
+  const isDesktopHandoff = platform === "desktop" && !cliPath;
   const nextUrl = sanitizeNextUrl(searchParams.get("next"));
 
   const [desktopToken, setDesktopToken] = useState<string | null>(null);
   const [desktopError, setDesktopError] = useState("");
-  const hasOnboarded = useHasOnboarded();
 
-  // Already authenticated — honor ?next= or fall back to first workspace
-  // (or /onboarding if the user has none). Skip this entire path when
-  // the user arrived to authorize the CLI.
+  // Already authenticated: route to destination. Skip when CLI confirm is
+  // active (CliConfirm handles its own action) or in forceEmail rescue.
   useEffect(() => {
-    if (isLoading || !user || cliCallbackRaw) return;
+    if (isLoading || !user || cliPath || forceEmail) return;
     if (isDesktopHandoff) {
-      // Desktop opened the browser for login but the web session is already
-      // authenticated — mint a bearer token from the cookie session and hand
-      // it off via deep link instead of silently redirecting to the workspace.
       api
         .issueCliToken()
         .then(({ token }) => {
@@ -94,7 +135,9 @@ function LoginPageContent() {
         })
         .catch((err) => {
           setDesktopError(
-            err instanceof Error ? err.message : "Failed to prepare Desktop sign-in",
+            err instanceof Error
+              ? err.message
+              : "Failed to prepare Desktop sign-in",
           );
         });
       return;
@@ -107,34 +150,67 @@ function LoginPageContent() {
     void resolveLoggedInDestination(qc, hasOnboarded, list).then((dest) =>
       router.replace(dest),
     );
-  }, [isLoading, user, router, nextUrl, cliCallbackRaw, isDesktopHandoff, hasOnboarded, qc]);
+  }, [
+    isLoading,
+    user,
+    router,
+    nextUrl,
+    cliPath,
+    isDesktopHandoff,
+    hasOnboarded,
+    qc,
+    forceEmail,
+  ]);
 
-  const handleSuccess = async () => {
-    // Read the latest user snapshot directly — the closure's `hasOnboarded`
-    // was captured before login completed and would be stale here.
-    const currentUser = useAuthStore.getState().user;
-    const onboarded = currentUser?.onboarded_at != null;
-    if (nextUrl) {
-      router.push(nextUrl);
+  // Unauthenticated → redirect to OIDC. Covers default visit, logout
+  // bounce, browser-back from Authentik. Waits until OIDC config is
+  // loaded (oidcAuthorizationEndpoint is empty until /api/config returns).
+  useEffect(() => {
+    if (
+      isLoading ||
+      user ||
+      forceEmail ||
+      !oidcAuthorizationEndpoint ||
+      !oidcClientID
+    ) {
       return;
     }
-    const list = qc.getQueryData<Workspace[]>(workspaceKeys.list()) ?? [];
-    const dest = await resolveLoggedInDestination(qc, onboarded, list);
-    router.push(dest);
-  };
+    let oidcState: string | undefined;
+    if (cliPath && cliCallbackRaw) {
+      // Preserve CLI flow through OIDC: after auth the callback page
+      // navigates to `next:` which brings the user back to /login with
+      // cli_callback intact, where CliConfirm finishes the loopback.
+      const cliReturn = `/login?cli_callback=${encodeURIComponent(cliCallbackRaw)}&cli_state=${encodeURIComponent(cliState)}`;
+      oidcState = `next:${cliReturn}`;
+    } else {
+      oidcState =
+        [
+          platform === "desktop" ? "platform:desktop" : "",
+          nextUrl ? `next:${nextUrl}` : "",
+        ]
+          .filter(Boolean)
+          .join(",") || undefined;
+    }
+    window.location.href = buildOIDCAuthorizeURL(
+      oidcAuthorizationEndpoint,
+      oidcClientID,
+      `${window.location.origin}/auth/oidc/callback`,
+      oidcState,
+    );
+  }, [
+    isLoading,
+    user,
+    forceEmail,
+    oidcAuthorizationEndpoint,
+    oidcClientID,
+    cliPath,
+    cliCallbackRaw,
+    cliState,
+    platform,
+    nextUrl,
+  ]);
 
-  // Build OIDC state: encode platform + next URL so the callback can
-  // redirect to the right place after login.
-  const oidcState = [
-    platform === "desktop" ? "platform:desktop" : "",
-    nextUrl ? `next:${nextUrl}` : "",
-  ]
-    .filter(Boolean)
-    .join(",") || undefined;
-
-  // While the desktop handoff is in progress (or has produced a token/error),
-  // render a dedicated screen instead of flashing the login form or redirecting
-  // away to a workspace page.
+  // Desktop handoff display while a token is being minted.
   if (isDesktopHandoff && user) {
     if (desktopError) {
       return (
@@ -178,42 +254,47 @@ function LoginPageContent() {
     );
   }
 
+  // CLI confirm path: cli_callback validated AND user authed.
+  if (cliPath && cliCallbackRaw && user) {
+    return (
+      <CliConfirm
+        cliCallback={cliCallbackRaw}
+        cliState={cliState}
+        onTokenObtained={setLoggedInCookie}
+      />
+    );
+  }
+
+  // Force-email rescue: render upstream LoginPage in email-only mode (no
+  // oidc prop). Backend /auth/send-code rejects with 403 when
+  // LOGIN_METHODS=oidc, so this rescue only succeeds after ops also flips
+  // LOGIN_METHODS to include "email". Two-key activation by design.
+  if (forceEmail) {
+    return (
+      <LoginPage
+        onSuccess={async () => {
+          const list = qc.getQueryData<Workspace[]>(workspaceKeys.list()) ?? [];
+          const onboarded =
+            useAuthStore.getState().user?.onboarded_at != null;
+          if (nextUrl) {
+            router.push(nextUrl);
+            return;
+          }
+          const dest = await resolveLoggedInDestination(qc, onboarded, list);
+          router.push(dest);
+        }}
+        onTokenObtained={setLoggedInCookie}
+      />
+    );
+  }
+
+  // Default + CLI-without-session: spinner while either /api/config
+  // resolves (so we know the OIDC authorize URL) or the redirect effect
+  // above fires.
   return (
-    <LoginPage
-      onSuccess={handleSuccess}
-      oidc={
-        oidcIssuerURL && oidcClientID
-          ? {
-              issuerURL: oidcIssuerURL,
-              clientID: oidcClientID,
-              redirectUri: `${window.location.origin}/auth/oidc/callback`,
-              state: oidcState,
-            }
-          : undefined
-      }
-      cliCallback={
-        cliCallbackRaw && validateCliCallback(cliCallbackRaw)
-          ? { url: cliCallbackRaw, state: cliState }
-          : undefined
-      }
-      onTokenObtained={setLoggedInCookie}
-      extra={
-        // Web-only nudge toward the desktop app. Copy is hardcoded EN
-        // for now because the login route sits outside the landing
-        // group's LocaleProvider — if this page ever becomes
-        // locale-aware, the strings live in positioning doc §3.3.
-        <span className="text-xs text-muted-foreground">
-          Prefer the desktop app?{" "}
-          <Link
-            href="/download"
-            onClick={() => captureDownloadIntent("login")}
-            className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground/70"
-          >
-            Download
-          </Link>
-        </span>
-      }
-    />
+    <div className="flex min-h-screen items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
   );
 }
 

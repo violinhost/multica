@@ -354,7 +354,7 @@ describe("LoginPage", () => {
       <LoginPage
         onSuccess={onSuccess}
         oidc={{
-          issuerURL: "https://auth.example/application/o/multica/",
+          authorizationEndpoint: "https://auth.example/application/o/authorize/",
           clientID: "abc",
           redirectUri: "http://localhost/auth/oidc/callback",
         }}
@@ -386,7 +386,7 @@ describe("LoginPage", () => {
       <LoginPage
         onSuccess={onSuccess}
         oidc={{
-          issuerURL: "https://auth.example/application/o/multica/",
+          authorizationEndpoint: "https://auth.example/application/o/authorize/",
           clientID: "abc",
           redirectUri: "http://localhost/auth/oidc/callback",
           state: "platform:desktop",
@@ -398,7 +398,7 @@ describe("LoginPage", () => {
     );
 
     expect(window.location.href).toContain(
-      "https://auth.example/application/o/multica/authorize?",
+      "https://auth.example/application/o/authorize/?",
     );
     expect(window.location.href).toContain("client_id=abc");
     expect(window.location.href).toContain("response_type=code");

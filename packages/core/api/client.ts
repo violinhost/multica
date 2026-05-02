@@ -806,6 +806,7 @@ export class ApiClient {
     allow_signup: boolean;
     oidc_issuer_url?: string;
     oidc_client_id?: string;
+    oidc_authorization_endpoint?: string;
     posthog_key?: string;
     posthog_host?: string;
   }> {

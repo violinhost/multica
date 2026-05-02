@@ -54,6 +54,7 @@ export function AuthInitializer({
           allowSignup: cfg.allow_signup,
           oidcIssuerURL: cfg.oidc_issuer_url,
           oidcClientID: cfg.oidc_client_id,
+          oidcAuthorizationEndpoint: cfg.oidc_authorization_endpoint,
         });
         if (cfg.posthog_key) {
           initAnalytics({

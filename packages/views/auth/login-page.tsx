@@ -28,11 +28,12 @@ import type { User } from "@multica/core/types";
 // ---------------------------------------------------------------------------
 
 interface OIDCAuthConfig {
-  /** Authentik (or any spec-conformant IDP) issuer URL, e.g.
-   *  `https://auth.velafi.ai/application/o/multica/`. The trailing slash
-   *  is part of the Authentik issuer convention; the authorize endpoint
-   *  is built by appending `authorize` (no extra slash). */
-  issuerURL: string;
+  /** IDP's authorize endpoint, taken from the discovery document's
+   *  `authorization_endpoint`. IDPs disagree on URL layout (Authentik
+   *  uses `/application/o/authorize/` shared across apps; Auth0 puts it
+   *  under the issuer subpath), so we never construct it client-side —
+   *  the backend resolves it once and exposes it via /api/config. */
+  authorizationEndpoint: string;
   clientID: string;
   redirectUri: string;
   /** Space-separated OIDC scopes. Defaults to `openid email profile`. */
@@ -285,10 +286,8 @@ export function LoginPage({
       scope: oidc.scopes || "openid email profile",
     });
     if (oidc.state) params.set("state", oidc.state);
-    // Authentik issuer URLs end with `/` by convention, e.g.
-    // `https://auth.velafi.ai/application/o/multica/`. Append `authorize`
-    // (no leading slash) to form the authorize endpoint.
-    window.location.href = `${oidc.issuerURL}authorize?${params}`;
+    const sep = oidc.authorizationEndpoint.includes("?") ? "&" : "?";
+    window.location.href = `${oidc.authorizationEndpoint}${sep}${params}`;
   };
 
   // -------------------------------------------------------------------------
@@ -458,7 +457,7 @@ export function LoginPage({
               </div>
               <Button
                 type="button"
-                variant="default"
+                variant="outline"
                 className="w-full"
                 size="lg"
                 onClick={handleOIDCLogin}
