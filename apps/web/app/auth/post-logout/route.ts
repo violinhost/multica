@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 // Velafi: post-Authentik-invalidation landing.
 //
@@ -15,8 +15,11 @@ import { NextResponse } from "next/server";
 //   - multica_auth    (HttpOnly session JWT)
 //   - multica_csrf    (CSRF double-submit token)
 //   - multica_logged_in (frontend-readable presence flag)
-export function GET(request: Request) {
-  const url = new URL(request.url);
+export function GET(request: NextRequest) {
+  // Use nextUrl which respects X-Forwarded-Host / X-Forwarded-Proto so the
+  // 302 Location goes to the public hostname (multica.velafi.ai) and not
+  // the internal Docker bind (0.0.0.0:3000).
+  const url = request.nextUrl.clone();
   url.pathname = "/login";
   url.search = "";
 
