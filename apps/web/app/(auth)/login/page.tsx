@@ -56,7 +56,8 @@ async function resolveLoggedInDestination(
 function LoginPageContent() {
   const router = useRouter();
   const qc = useQueryClient();
-  const googleClientId = useConfigStore((state) => state.googleClientId);
+  const oidcIssuerURL = useConfigStore((state) => state.oidcIssuerURL);
+  const oidcClientID = useConfigStore((state) => state.oidcClientID);
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const searchParams = useSearchParams();
@@ -122,9 +123,9 @@ function LoginPageContent() {
     router.push(dest);
   };
 
-  // Build Google OAuth state: encode platform + next URL so the callback
-  // can redirect to the right place after login.
-  const googleState = [
+  // Build OIDC state: encode platform + next URL so the callback can
+  // redirect to the right place after login.
+  const oidcState = [
     platform === "desktop" ? "platform:desktop" : "",
     nextUrl ? `next:${nextUrl}` : "",
   ]
@@ -180,12 +181,13 @@ function LoginPageContent() {
   return (
     <LoginPage
       onSuccess={handleSuccess}
-      google={
-        googleClientId
+      oidc={
+        oidcIssuerURL && oidcClientID
           ? {
-              clientId: googleClientId,
-              redirectUri: `${window.location.origin}/auth/callback`,
-              state: googleState,
+              issuerURL: oidcIssuerURL,
+              clientID: oidcClientID,
+              redirectUri: `${window.location.origin}/auth/oidc/callback`,
+              state: oidcState,
             }
           : undefined
       }

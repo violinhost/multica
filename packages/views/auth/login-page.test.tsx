@@ -346,26 +346,69 @@ describe("LoginPage", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Google OAuth
+  // OIDC SSO
   // -------------------------------------------------------------------------
 
-  it("renders Google OAuth button when google prop provided", () => {
+  it("renders SSO button when oidc prop provided", () => {
     render(
       <LoginPage
         onSuccess={onSuccess}
-        google={{ clientId: "goog-123", redirectUri: "http://localhost/cb" }}
+        oidc={{
+          issuerURL: "https://auth.example/application/o/multica/",
+          clientID: "abc",
+          redirectUri: "http://localhost/auth/oidc/callback",
+        }}
       />,
     );
     expect(
-      screen.getByRole("button", { name: /continue with google/i }),
+      screen.getByRole("button", { name: /continue with single sign-on/i }),
     ).toBeInTheDocument();
   });
 
-  it("hides Google OAuth button when google prop omitted", () => {
+  it("hides SSO button when oidc prop omitted", () => {
     render(<LoginPage onSuccess={onSuccess} />);
     expect(
-      screen.queryByRole("button", { name: /continue with google/i }),
+      screen.queryByRole("button", { name: /continue with single sign-on/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("builds OIDC authorize URL on click", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const originalLocation = window.location;
+    // jsdom blocks assigning through window.location, but we can replace it
+    // with a writable stub for the duration of the test.
+    // @ts-expect-error — deliberately narrow
+    delete window.location;
+    // @ts-expect-error — minimal stub
+    window.location = { href: "", origin: "http://localhost" };
+
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        oidc={{
+          issuerURL: "https://auth.example/application/o/multica/",
+          clientID: "abc",
+          redirectUri: "http://localhost/auth/oidc/callback",
+          state: "platform:desktop",
+        }}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /continue with single sign-on/i }),
+    );
+
+    expect(window.location.href).toContain(
+      "https://auth.example/application/o/multica/authorize?",
+    );
+    expect(window.location.href).toContain("client_id=abc");
+    expect(window.location.href).toContain("response_type=code");
+    expect(window.location.href).toContain(
+      "scope=openid+email+profile",
+    );
+    expect(window.location.href).toContain("state=platform%3Adesktop");
+
+    // @ts-expect-error — restore
+    window.location = originalLocation;
   });
 
   // -------------------------------------------------------------------------

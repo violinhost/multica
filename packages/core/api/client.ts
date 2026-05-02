@@ -301,8 +301,8 @@ export class ApiClient {
     });
   }
 
-  async googleLogin(code: string, redirectUri: string): Promise<LoginResponse> {
-    return this.fetch("/auth/google", {
+  async oidcLogin(code: string, redirectUri: string): Promise<LoginResponse> {
+    return this.fetch("/auth/oidc", {
       method: "POST",
       body: JSON.stringify({ code, redirect_uri: redirectUri }),
     });
@@ -804,7 +804,8 @@ export class ApiClient {
   async getConfig(): Promise<{
     cdn_domain: string;
     allow_signup: boolean;
-    google_client_id?: string;
+    oidc_issuer_url?: string;
+    oidc_client_id?: string;
     posthog_key?: string;
     posthog_host?: string;
   }> {
