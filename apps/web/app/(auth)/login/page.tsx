@@ -175,6 +175,27 @@ function LoginPageContent() {
     ) {
       return;
     }
+
+    // Race breaker: when the user clicks logout, auth-cookie.ts sets a
+    // sessionStorage flag and navigates to Authentik's invalidation flow.
+    // The auth store's set({user:null}) triggers this same effect to fire
+    // before the navigation commits — without the flag, we'd race the
+    // invalidation navigation and silently re-login via still-valid IDP
+    // session. Stale flag (>30 s) is dropped so a refresh after a real
+    // session expiry still redirects normally.
+    try {
+      const stamp = sessionStorage.getItem("velafi-logout-in-progress");
+      if (stamp) {
+        const age = Date.now() - parseInt(stamp, 10);
+        if (Number.isFinite(age) && age >= 0 && age < 30_000) {
+          return;
+        }
+        sessionStorage.removeItem("velafi-logout-in-progress");
+      }
+    } catch {
+      /* sessionStorage unavailable — proceed without the race breaker */
+    }
+
     let oidcState: string | undefined;
     if (cliPath && cliCallbackRaw) {
       // Preserve CLI flow through OIDC: after auth the callback page
