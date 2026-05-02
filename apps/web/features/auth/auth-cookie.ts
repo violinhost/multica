@@ -34,6 +34,24 @@ export function clearLoggedInCookie() {
   }
 
   if (typeof window === "undefined") return;
+
+  // Race breaker: the auth store flow runs `set({ user: null })` immediately
+  // after this callback returns, which triggers a React re-render. Plan B
+  // /login sees `user == null` and would issue its own redirect to the OIDC
+  // authorize URL (which silently re-logs the user in if the IDP session is
+  // still valid — the very thing we're trying to invalidate). Stamp a flag
+  // so Plan B's auto-redirect effect bows out and lets our invalidation
+  // navigation win. Plan B clears the flag once the post-invalidation
+  // bounce back to /login completes, OR after a 30 s safety window.
+  try {
+    sessionStorage.setItem(
+      "velafi-logout-in-progress",
+      String(Date.now()),
+    );
+  } catch {
+    /* sessionStorage may be unavailable (e.g. private mode) — fall through */
+  }
+
   const issuer = configStore.getState().oidcIssuerURL;
   if (!issuer) return;
   try {
