@@ -16,6 +16,23 @@ export function setLoggedInCookie() {
 export function clearLoggedInCookie() {
   document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
 
+  // Backend logout: clear multica's HttpOnly auth cookie. We use
+  // `keepalive: true` so the POST is guaranteed to complete even after
+  // window.location.href triggers navigation — without it, the in-flight
+  // fetch is canceled, the cookie persists, and the user is silently
+  // re-logged-in when they bounce back from Authentik invalidation.
+  // /auth/logout is CSRF-exempt at the multica spec level, so a plain
+  // fetch (no api wrapper) is safe here.
+  try {
+    fetch("/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+    });
+  } catch {
+    /* best-effort */
+  }
+
   if (typeof window === "undefined") return;
   const issuer = configStore.getState().oidcIssuerURL;
   if (!issuer) return;
