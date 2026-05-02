@@ -181,16 +181,33 @@ function LoginPageContent() {
     // The auth store's set({user:null}) triggers this same effect to fire
     // before the navigation commits — without the flag, we'd race the
     // invalidation navigation and silently re-login via still-valid IDP
-    // session. Stale flag (>30 s) is dropped so a refresh after a real
-    // session expiry still redirects normally.
+    // session.
+    //
+    // Two clearing conditions, whichever comes first:
+    //   1. Referrer is the IDP path — we're back from Authentik invalidation
+    //      and ready to re-auth (no IDP session anymore). Drop the flag and
+    //      let the redirect proceed.
+    //   2. Flag age > 1.5 s — covers the immediate React re-render race
+    //      window (~10 ms) with margin, expires well before the post-
+    //      invalidation bounce typically lands (~3 s) so we don't strand
+    //      the user on a spinner if invalidation is fast.
     try {
       const stamp = sessionStorage.getItem("velafi-logout-in-progress");
       if (stamp) {
-        const age = Date.now() - parseInt(stamp, 10);
-        if (Number.isFinite(age) && age >= 0 && age < 30_000) {
-          return;
+        const fromIDP =
+          typeof document !== "undefined" &&
+          document.referrer &&
+          document.referrer.includes("/idp/");
+        if (fromIDP) {
+          sessionStorage.removeItem("velafi-logout-in-progress");
+          /* fall through — re-auth normally */
+        } else {
+          const age = Date.now() - parseInt(stamp, 10);
+          if (Number.isFinite(age) && age >= 0 && age < 1_500) {
+            return;
+          }
+          sessionStorage.removeItem("velafi-logout-in-progress");
         }
-        sessionStorage.removeItem("velafi-logout-in-progress");
       }
     } catch {
       /* sessionStorage unavailable — proceed without the race breaker */
