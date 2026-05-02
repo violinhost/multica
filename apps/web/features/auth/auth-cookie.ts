@@ -20,8 +20,16 @@ export function clearLoggedInCookie() {
   const issuer = configStore.getState().oidcIssuerURL;
   if (!issuer) return;
   try {
-    const idpOrigin = new URL(issuer).origin;
-    const url = new URL(`${idpOrigin}/if/flow/default-invalidation-flow/`);
+    // Resolve invalidation-flow URL relative to the issuer so we adapt to
+    // both root-path Authentik deployments (issuer like
+    // https://idp.example.com/application/o/<app>/) and subpath ones
+    // (https://multica.velafi.ai/idp/application/o/<app>/). The 3 ../
+    // walks up application/o/<app>/ → application/o/ → application/ → root
+    // (or /idp/ in the subpath case).
+    const url = new URL(
+      "../../../if/flow/default-invalidation-flow/",
+      issuer,
+    );
     url.searchParams.set("next", `${window.location.origin}/`);
     window.location.href = url.toString();
   } catch {
