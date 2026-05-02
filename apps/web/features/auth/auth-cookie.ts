@@ -65,7 +65,17 @@ export function clearLoggedInCookie() {
       "../../../if/flow/default-invalidation-flow/",
       issuer,
     );
-    url.searchParams.set("next", `${window.location.origin}/`);
+    // Authentik's `?next=` after invalidation lands at /auth/post-logout,
+    // a server-side route that Set-Cookies all multica auth cookies to
+    // empty before redirecting to /login. This guarantees the HttpOnly
+    // session cookie is cleared even if the frontend's keepalive POST
+    // /auth/logout was canceled by the navigation. Without this, a stale
+    // backend cookie on the post-invalidation bounce would land the user
+    // at the workspace dashboard instead of the SSO sign-in page.
+    url.searchParams.set(
+      "next",
+      `${window.location.origin}/auth/post-logout`,
+    );
     window.location.href = url.toString();
   } catch {
     /* malformed issuer — fall through, user stays on whatever page they were on */
