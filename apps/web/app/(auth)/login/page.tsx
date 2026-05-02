@@ -176,43 +176,6 @@ function LoginPageContent() {
       return;
     }
 
-    // Race breaker: when the user clicks logout, auth-cookie.ts sets a
-    // sessionStorage flag and navigates to Authentik's invalidation flow.
-    // The auth store's set({user:null}) triggers this same effect to fire
-    // before the navigation commits — without the flag, we'd race the
-    // invalidation navigation and silently re-login via still-valid IDP
-    // session.
-    //
-    // Two clearing conditions, whichever comes first:
-    //   1. Referrer is the IDP path — we're back from Authentik invalidation
-    //      and ready to re-auth (no IDP session anymore). Drop the flag and
-    //      let the redirect proceed.
-    //   2. Flag age > 1.5 s — covers the immediate React re-render race
-    //      window (~10 ms) with margin, expires well before the post-
-    //      invalidation bounce typically lands (~3 s) so we don't strand
-    //      the user on a spinner if invalidation is fast.
-    try {
-      const stamp = sessionStorage.getItem("velafi-logout-in-progress");
-      if (stamp) {
-        const fromIDP =
-          typeof document !== "undefined" &&
-          document.referrer &&
-          document.referrer.includes("/idp/");
-        if (fromIDP) {
-          sessionStorage.removeItem("velafi-logout-in-progress");
-          /* fall through — re-auth normally */
-        } else {
-          const age = Date.now() - parseInt(stamp, 10);
-          if (Number.isFinite(age) && age >= 0 && age < 1_500) {
-            return;
-          }
-          sessionStorage.removeItem("velafi-logout-in-progress");
-        }
-      }
-    } catch {
-      /* sessionStorage unavailable — proceed without the race breaker */
-    }
-
     let oidcState: string | undefined;
     if (cliPath && cliCallbackRaw) {
       // Preserve CLI flow through OIDC: after auth the callback page

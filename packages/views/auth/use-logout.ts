@@ -52,12 +52,26 @@ export function useLogout() {
     defaultStorage.removeItem("multica_tabs");
 
     queryClient.clear();
-    authLogout();
 
-    // Navigate to /login explicitly. authLogout() clears state but doesn't
-    // move the URL — without this the caller might be on a workspace URL
-    // which renders null (layout gates on user) and leaves the user
-    // stuck on a blank page.
+    // Velafi web SSO logout: route through the server-side /auth/server-logout
+    // endpoint so cookie clearing + Authentik invalidation runs as a single
+    // atomic redirect chain. Bypasses authLogout()'s onLogout-vs-Plan-B race
+    // (where window.location.href to invalidation gets overridden by the
+    // /login auto-redirect to OIDC, silently re-logging the user back in).
+    //
+    // Detect web vs desktop via electronAPI (set by apps/desktop preload):
+    //   - web   → /auth/server-logout (full page nav, server clears cookies,
+    //             302 to Authentik invalidation, 302 to /login)
+    //   - desktop → existing in-app logout (no SSO involved on desktop)
+    if (
+      typeof window !== "undefined" &&
+      !("electronAPI" in window)
+    ) {
+      window.location.href = "/auth/server-logout";
+      return;
+    }
+
+    authLogout();
     push(paths.login());
   }, [queryClient, authLogout, push]);
 }
