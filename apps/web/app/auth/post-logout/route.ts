@@ -16,14 +16,17 @@ import { type NextRequest, NextResponse } from "next/server";
 //   - multica_csrf    (CSRF double-submit token)
 //   - multica_logged_in (frontend-readable presence flag)
 export function GET(request: NextRequest) {
-  // Use nextUrl which respects X-Forwarded-Host / X-Forwarded-Proto so the
-  // 302 Location goes to the public hostname (multica.velafi.ai) and not
-  // the internal Docker bind (0.0.0.0:3000).
-  const url = request.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = "";
-
-  const response = NextResponse.redirect(url, 302);
+  // Build the public-facing /login URL from X-Forwarded-* headers, since
+  // Next.js sees the internal Docker bind (0.0.0.0:3000) for request.url
+  // when running behind cloudflared. Fall back to nextUrl, then a relative
+  // path, in that order.
+  const xfHost = request.headers.get("x-forwarded-host");
+  const xfProto = request.headers.get("x-forwarded-proto") || "https";
+  const target =
+    xfHost && /^[A-Za-z0-9.\-]+(:\d+)?$/.test(xfHost)
+      ? `${xfProto}://${xfHost}/login`
+      : "/login";
+  const response = NextResponse.redirect(target, 302);
   // Match path + sameSite of the originals (server/internal/auth/cookie.go)
   // so the browser identifies and drops them. multica_auth is HttpOnly +
   // SameSite=Strict; multica_csrf is non-HttpOnly + Strict; multica_logged_in
