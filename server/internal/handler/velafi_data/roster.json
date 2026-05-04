@@ -1,0 +1,1002 @@
+{
+  "generated_at": "2026-05-04T04:29:47.462593+00:00",
+  "app_id": "cli_a97f9e7ed438de15",
+  "count": 71,
+  "users": [
+    {
+      "name": "Holiday",
+      "en_name": "Holiday Lu - Finance",
+      "email": "holiday.lu@galactic.holdings",
+      "open_id": "ou_7e2402dbc8a603cd5a7bfd3d8f988afd",
+      "union_id": "on_f51847ee7feb21d78859980569768473",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Yukki",
+      "en_name": "Yukki Li - Finance",
+      "email": "yukki.li@galactic.holdings",
+      "open_id": "ou_64b7a15a1fd00fcc25f34966b8b015eb",
+      "union_id": "on_931451bf040347406e29e04404487952",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Miguel Lopez - Finance",
+      "en_name": "",
+      "email": "miguel.lopez@galactic.holdings",
+      "open_id": "ou_06b406ab3ac2f618af94b172b87c6d34",
+      "union_id": "on_b7aaa5c0b76b9e3b304def7d4f2e5246",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Luisina Veit - Finance",
+      "en_name": "",
+      "email": "luisina.veit@velafi.com",
+      "open_id": "ou_3a7fcfcdab809f6a7be04820016858ca",
+      "union_id": "on_b158bea144202fdd6bfae0a368ab0588",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "包小方",
+      "en_name": "Cassie Bao - Finance",
+      "email": "cassie.bao@galactic.holdings",
+      "open_id": "ou_1b777eb0f5b208c41a3f9f3c630a5888",
+      "union_id": "on_1a6ce33f56e18763bcf88c4760859161",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "刘皓然",
+      "en_name": "Chris Liu - Finance",
+      "email": "chris.liu@galactic.holdings",
+      "open_id": "ou_4e73f9ad696fe632b6c9df7331789a22",
+      "union_id": "on_57fcc4b849370bd1cef2a9f31369bb33",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Alejandro Perez",
+      "en_name": "Alejandro Perez - Finance",
+      "email": "alejandro.perez@galactic.holdings",
+      "open_id": "ou_064ca49764a9a368b1db3fa7ceeba6c7",
+      "union_id": "on_daf27070ddbd8f994358c84ff6385ff5",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Bruce",
+      "en_name": "Bruce Lu - Finance",
+      "email": "bruce.lu@velafi.com",
+      "open_id": "ou_8694c0ebc2308163a45eae95b8f9b247",
+      "union_id": "on_2586bdd7c6d3eb72ca93916c346dd2fd",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-b82b58d3805fbc33d13ee1e436cfdac2"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Henry Lin - Corp",
+      "en_name": "",
+      "email": "henry.lin@galactic.holdings",
+      "open_id": "ou_781d1783de0960e010af9273c2e09985",
+      "union_id": "on_993395648fa352b1b5a3b2b2adfbfcb7",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-fa2659d290727b5446f7fe8ce3d7a160"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Amelia Gao",
+      "en_name": "Amelia Gao - Data",
+      "email": "amelia@galactic.holdings",
+      "open_id": "ou_7bb61759cd225c8218b67800e390ad24",
+      "union_id": "on_f296a5038f12544b21f676c1df1266ff",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-acb3b6a8ec757d8b611998135456f342"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Roberto Femat",
+      "en_name": "Roberto Femat - MKT",
+      "email": "roberto.femat@galactic.holdings",
+      "open_id": "ou_d2fcc1cc00382e576e7314d8ba22f7a5",
+      "union_id": "on_24d817d425faf639847823f82264ce0d",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-cee8318c497a6796c7bfc0f250d5d176"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jane_US",
+      "en_name": "Jane Luo - MKT",
+      "email": "jane.luo@galactic.holdings",
+      "open_id": "ou_ce50ef290f124464eae99c3bec35e865",
+      "union_id": "on_51fe9d0b209eddf24e52d57b54c930dc",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-cee8318c497a6796c7bfc0f250d5d176"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Mariana Sosa - MKT",
+      "en_name": "",
+      "email": "mariana.sosa@galactic.holdings",
+      "open_id": "ou_8ac04ef4d399066f27528a77ffe325c6",
+      "union_id": "on_509f21a9c5bb5969e54a88e347b22388",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-cee8318c497a6796c7bfc0f250d5d176"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Asher Dong",
+      "en_name": "",
+      "email": "asher.dong@galactic.holdings",
+      "open_id": "ou_a1fc7703309370d98e91a8d90e952922",
+      "union_id": "on_5d1c5bc466a942c5274050e50778b0f5",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-455225586a33fad9250b6f7ad2b70a3d"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "罗诗韵",
+      "en_name": "Luby Luo - p&e",
+      "email": "luby.luo@galactic.holdings",
+      "open_id": "ou_70de5308d6342c2cf203cd3af734bf94",
+      "union_id": "on_b8330fc896034d03334952b53106b890",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-a5d301b1ffeafdbf9bc00ed62837c005"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "wendy_ jin",
+      "en_name": "",
+      "email": "wendy.jin@galactic.holdings",
+      "open_id": "ou_289ea05771ee3a248bd85c64654422f4",
+      "union_id": "on_467778161ad41ac20488c1ae202c31e8",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-a5d301b1ffeafdbf9bc00ed62837c005"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "郭雨豪",
+      "en_name": "",
+      "email": "yuhao.guo@galactic.holdings",
+      "open_id": "ou_959f952442ec182bf8ed041a9e109e3e",
+      "union_id": "on_acb9447e6b289f4db390404fbe4681d9",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-d7d892616935b63592f8ab90cfbad2ca"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "justin.cao",
+      "en_name": "",
+      "email": "yangrui.cao@galactic.holdings",
+      "open_id": "ou_8edbccd49c01566d90958e9b9be5b3ac",
+      "union_id": "on_16382ccca42a5e367b248de2c4a645b2",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-d7d892616935b63592f8ab90cfbad2ca"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "lihang",
+      "en_name": "",
+      "email": "hang.li@galactic.holdings",
+      "open_id": "ou_aa64de1f533e5421e77be6c3de9134ae",
+      "union_id": "on_871c40fb8ac858d9ce3300af33be1235",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-73b242bfd521e74c67eef2b16eef359c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Camille Feng",
+      "en_name": "Camille Feng - P&E",
+      "email": "pan.feng@galactic.holdings",
+      "open_id": "ou_5db53543dd36d39722cc1071335b27bb",
+      "union_id": "on_5944bbc474e35db9211e70315f3a841b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-73b242bfd521e74c67eef2b16eef359c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jackson Zhang",
+      "en_name": "",
+      "email": "zhangzx@galactic.holdings",
+      "open_id": "ou_aa3e09f682e95777dd47a918351db71a",
+      "union_id": "on_f36f7ccfc11d71911b7356b830f11205",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-73b242bfd521e74c67eef2b16eef359c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "王小红",
+      "en_name": "",
+      "email": "xiaohong.wang@galactic.holdings",
+      "open_id": "ou_2e4339e948987d931c78d79384a1d312",
+      "union_id": "on_d5e6668412dd39178f80f759410b1b96",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-73b242bfd521e74c67eef2b16eef359c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Ethan",
+      "en_name": "",
+      "email": "ethan.yang@galactic.holdings",
+      "open_id": "ou_095622b982b5a991a21a8b6693e3fddc",
+      "union_id": "on_c8758e310256b9b00efb02cfca3e8b1b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-73b242bfd521e74c67eef2b16eef359c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "骆杭祺",
+      "en_name": "Jeffrey Luo",
+      "email": "jeffrey.luo@galactic.holdings",
+      "open_id": "ou_c16fa24d5ed9dc3f6beef741973d2fa9",
+      "union_id": "on_f7af3af7ee9afe2872a8c868aa3ac775",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-73b242bfd521e74c67eef2b16eef359c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Vincent Chan",
+      "en_name": "Vincent Chan - P&E",
+      "email": "vincent.chan@galactic.holdings",
+      "open_id": "ou_22d1961ac509df2fbe30b9fa3687bfbe",
+      "union_id": "on_d00d4332fb36457812524987ca5b32f8",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-e0787c41d679112c26ee4182fa681649"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "炯星",
+      "en_name": "",
+      "email": "jiongxing.zhang@galactic.holdings",
+      "open_id": "ou_291b9ea4269c393c30cf2b6046e7d5b3",
+      "union_id": "on_50c530e4efe618547c0b8aab802579aa",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-76da0c84fbd3b659051b97da79890d55"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "闫春雷",
+      "en_name": "",
+      "email": "chunlei.yan@galactic.holdings",
+      "open_id": "ou_d30f1f0df528cf6737452940765b4d54",
+      "union_id": "on_3bd713148d3ceeb712b7a90c47b965ef",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-32fcbb981c04a0feb0fed44b2ba31013"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "liangxiaochuan",
+      "en_name": "Xiaochuan Liang - P&E",
+      "email": "xiaochuan.liang@galactic.holdings",
+      "open_id": "ou_0186c9292b32d63774d38314c2eed265",
+      "union_id": "on_b6ce691c4c543ca8a12e5196504ccfdc",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-32fcbb981c04a0feb0fed44b2ba31013"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Rebecca（井儿）",
+      "en_name": "Rebecca Qian - HR",
+      "email": "rebecca.qian@galactic.holdings",
+      "open_id": "ou_cad6231197bb11e2b0b48dc7ac4e5328",
+      "union_id": "on_b77d7f9eaed8743b7ef2caf7ad66932f",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-367e3bbc96e95f559a735fcc47162aa4"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Ana Conrique",
+      "en_name": "",
+      "email": "ana.conrique@velafi.com",
+      "open_id": "ou_916f43025c2f43e373626017a264b5a1",
+      "union_id": "on_3dbcecc4647ebf4f7e4309481cbe5247",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-367e3bbc96e95f559a735fcc47162aa4"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Pela",
+      "en_name": "",
+      "email": "qichuan.zhang@galactic.holdings",
+      "open_id": "ou_5830e1533874b6a3da454ad31d228a8e",
+      "union_id": "on_429ac5d11348b15916465e5121f768bf",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-2450663638590c96eea1045b7a80d7ee"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jay Chen",
+      "en_name": "Jay Chen - Corp",
+      "email": "jay.chen@galactic.holdings",
+      "open_id": "ou_8798b4df2b2c27767ce008405eefeeda",
+      "union_id": "on_5deb38065c6fda9e8c3c3775c51e3cfe",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-2ceb613d8772bba783dbd4461a462c7f"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Leticia Huang",
+      "en_name": "Leticia Huang Latam",
+      "email": "leticia.huang@galactic.holdings",
+      "open_id": "ou_78854bcce4f389bff1502572ee4fb193",
+      "union_id": "on_1273e4f98d8f6c200f15452727cf546d",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-2ceb613d8772bba783dbd4461a462c7f"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Julio Ballestero",
+      "en_name": "",
+      "email": "julio.ballestero@galactic.holdings",
+      "open_id": "ou_3099a9636b1777b43a84c67b0a507998",
+      "union_id": "on_0650016e134ac433bad02c45b28c6105",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-2ceb613d8772bba783dbd4461a462c7f"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Olivia Wang",
+      "en_name": "Olivia Wang - Corp",
+      "email": "",
+      "open_id": "ou_28eeea8161ebf539d20f0c4d7f6af2f6",
+      "union_id": "on_31f62e28e99b72f068350dca341c28f3",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-2ceb613d8772bba783dbd4461a462c7f"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jessica Huang",
+      "en_name": "",
+      "email": "jessica.huang@velafi.com",
+      "open_id": "ou_668c50e91087820123bef2e098f45f25",
+      "union_id": "on_fd9ac0cfe113f77b406b4ce91b66758d",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-91daf4730659862a931fd457ff6bc687"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Matias Reyes",
+      "en_name": "Matias Reyes - LATAM",
+      "email": "matias.reyes@galactic.holdings",
+      "open_id": "ou_93846c67a29405e33a9273fe1940b472",
+      "union_id": "on_150a16a31a0a73e2d6e98d7afe762b12",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-562d228c5eed88ee8b9d708c63055c68"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Matias Marasca",
+      "en_name": "Matias Marasca - LATAM Trading",
+      "email": "matias.marasca@galactic.holdings",
+      "open_id": "ou_bb6f9c74e69fabb59d23a00a5fb026bf",
+      "union_id": "on_b732efe4d4a3e7466869adb23002063b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-00aee76d936d02066d2b69d2480ca474",
+        "od-562d228c5eed88ee8b9d708c63055c68"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Zoe Li",
+      "en_name": "Zoe Li - Corp",
+      "email": "zoe.li@galactic.holdings",
+      "open_id": "ou_9a6c381f0c9dbc358418231d9b2eb7e2",
+      "union_id": "on_c40aea7b8ba310b6cec213cb19d681f8",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-562d228c5eed88ee8b9d708c63055c68"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Sergio Lins",
+      "en_name": "Sergio Lins - LATAM Trading",
+      "email": "sergio.lins@galactic.holdings",
+      "open_id": "ou_dadf75ee81b6e77271f4f1da54ecfae5",
+      "union_id": "on_70145e1fbd305a6b9042374a3a8610bf",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-00aee76d936d02066d2b69d2480ca474"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Michell Alejandro Morales",
+      "en_name": "Michell Morales - LATAM Trading",
+      "email": "alias.michell.morales@galactic.holdings",
+      "open_id": "ou_e378f56f4143dc74f09e77f9e73562c9",
+      "union_id": "on_4464c920920645a757cc9958bf21684a",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-00aee76d936d02066d2b69d2480ca474"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "María Belén Sotto",
+      "en_name": "Belén Sotto - LATAM Trading",
+      "email": "belen.sotto@velafi.com",
+      "open_id": "ou_40b3467711a23ea1c8ab93c4bc0f6843",
+      "union_id": "on_a8aa2e886a13ba1d113da0ecf6d24a2a",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-00aee76d936d02066d2b69d2480ca474"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Chris Wang",
+      "en_name": "Chris Wang - Finance",
+      "email": "chris.wang@velafi.com",
+      "open_id": "ou_e2af392dc757cb9b6643e339dc262f86",
+      "union_id": "on_07e5c74516d087acb2fb14f141c714bd",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-00aee76d936d02066d2b69d2480ca474"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Michael Aangjeli - Treasury & Liquidity",
+      "en_name": "Michael Angjeli - Treasury & Liquidity",
+      "email": "michael.angjeli@velafi.com",
+      "open_id": "ou_1d72923bb709e4c7a5fe985adad13aef",
+      "union_id": "on_58dd42868cdc4ac14134426ece74ad1b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-00aee76d936d02066d2b69d2480ca474"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Hongyi",
+      "en_name": "Hongyi Tang - LATAM",
+      "email": "hongyi.tang@galactic.holdings",
+      "open_id": "ou_96b018d778254879cd3efe46b7eecdb8",
+      "union_id": "on_a852c36ecf0e9729e8f61493e1c42b4b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-07f47d901fea26a09a0c28272d440dfa"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jerónimo Cafferata",
+      "en_name": "Jeronimo Cafferata - LATAM Sales",
+      "email": "jeronimo.cafferata@galactic.holdings",
+      "open_id": "ou_7e8f070c9d8ee2cefa7c27e9cf7a6833",
+      "union_id": "on_971692a3965273913d382b1ea3664921",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-e6e3ac7e7e0aabed5524b253e6ca0920"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "石裕婷",
+      "en_name": "Helen Shi - LATAM Sales",
+      "email": "helen.shi@galactic.holdings",
+      "open_id": "ou_f18f1e40979de35b2ab2c46ead86ac81",
+      "union_id": "on_317770e213425233cad71c1f4891bc4b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Andy Mai",
+      "en_name": "",
+      "email": "andy.mai@galactic.holdings",
+      "open_id": "ou_00a192743bb4e812085bb3d23e124f78",
+      "union_id": "on_1a6df12fb1cee4f9a8238205fc0c70da",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "严江华",
+      "en_name": "",
+      "email": "jianghua.yan@galactic.holdings",
+      "open_id": "ou_c4642baa45e5d9c4d7aaf7bf07497852",
+      "union_id": "on_22633ed382823180cf8ad936a779ad95",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Wenbin Wu - Sales",
+      "en_name": "",
+      "email": "wenbin.wu@galactic.holdings",
+      "open_id": "ou_c2d6d0a190efc6d7cd7b9870cf68ac20",
+      "union_id": "on_21d52b4b580e2d2a64a6e8b5352aee3e",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Facundo Picca - LATAM Sales",
+      "en_name": "",
+      "email": "facundo.picca@galactic.holdings",
+      "open_id": "ou_c1c51568a6e85f919b37a6dd74159b7f",
+      "union_id": "on_3e9cc81f56d60e607c7ea56ccae3fdde",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Javier Roig Pérez",
+      "en_name": "Javier Roig Pérez - LATAM Sales",
+      "email": "javier.roig@galactic.holdings",
+      "open_id": "ou_3cfc3f7bc9b7bc7ca542e27343dc3f8c",
+      "union_id": "on_2bc8040d71362015a47bf35d75cabc35",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Diego",
+      "en_name": "Diego Tenorio | LATAM Sales",
+      "email": "diego.tenorio@galactic.holdings",
+      "open_id": "ou_daba8f96a225c3df0aec31b535d77631",
+      "union_id": "on_ab91330e856fb79b5b1760415da1c312",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Hugo",
+      "en_name": "Hugo Velazquez - LATAM L&C",
+      "email": "hugo.velazquez@galactic.holdings",
+      "open_id": "ou_8e2478f0c64bd8b25f048f652fdb8893",
+      "union_id": "on_04d55c25cf0102b19dc791a1dac689f4",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-72b37d54f6298d298d0c7e5f802551da"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Aaron Rivera",
+      "en_name": "Aaron Rivera - LATAM Onboarding",
+      "email": "aaron.rivera@galactic.holdings",
+      "open_id": "ou_84e1a85c483bada3f6d88a003700ab12",
+      "union_id": "on_b269e8b0d50a82c522171a1fae7258cc",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-72b37d54f6298d298d0c7e5f802551da"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jose",
+      "en_name": "Jose Quintero - LATAM Onboarding",
+      "email": "jose.quintero@galactic.holdings",
+      "open_id": "ou_d288c525596db90ccf18d30f9a4953b6",
+      "union_id": "on_a3b3e127e4b5011744a8022962f1829b",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-72b37d54f6298d298d0c7e5f802551da"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Sonia",
+      "en_name": "Sonia Li - LATMA Sales",
+      "email": "sonia.li@galactic.holdings",
+      "open_id": "ou_c9ac80088ee574d9801a1e6b6bee6e40",
+      "union_id": "on_a4deff752a5cf81fb6938ed1ca816079",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-882f8d4c01a5e77bb956e42e67b8e36b"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jerry Lee",
+      "en_name": "Jerry Chiayuan Lee - LATAM Customer Success",
+      "email": "jerry.lee@galactic.holdings",
+      "open_id": "ou_ccfd4ae983b671ff3e8c543051def010",
+      "union_id": "on_e2fa3aa06c0b44f9394f376de23b83c9",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-882f8d4c01a5e77bb956e42e67b8e36b"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Lena",
+      "en_name": "Lena Zhang - Legal (US-Global)",
+      "email": "lena.zhang@galactic.holdings",
+      "open_id": "ou_560f9712fc89aab1ef81a3ef7d12a434",
+      "union_id": "on_8b678e64fd2994459ee3760443eee3a5",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-68341bac730e722100cfb1337ab565e5"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Dawen",
+      "en_name": "",
+      "email": "dawen.chu@galactic.holdings",
+      "open_id": "ou_384d555f2f679f11fe1a3bdfd636e2c9",
+      "union_id": "on_17f281de14192c268700c0a732fc6eeb",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-6af8f53b1c1b4cd2ec9fd9433a4e680c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Paul",
+      "en_name": "",
+      "email": "paul.xu@galactic.holdings",
+      "open_id": "ou_185efa26f033e59304ff0e28ec352421",
+      "union_id": "on_c07785e00be2d0a7798d39c498c601e3",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-6af8f53b1c1b4cd2ec9fd9433a4e680c"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Nancy Chiang",
+      "en_name": "Nancy Chiang - LATAM L&C",
+      "email": "nancy.chiang@galactic.holdings",
+      "open_id": "ou_b3e2a246a0e3c63c2d580a0798f6a314",
+      "union_id": "on_1e5b49abc813375aaa3fd28ad6b64902",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Eugenia Basile",
+      "en_name": "Eugenia Basile - LATAM L&C",
+      "email": "eugenia.basile@galactic.holdings",
+      "open_id": "ou_225cf512dffc366db6522e77f53cdee7",
+      "union_id": "on_425d7667928e273aca17a8ce2aa532a3",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Federico Vicuña - LATAM L&C",
+      "en_name": "",
+      "email": "federico.vicuna@galactic.holdings",
+      "open_id": "ou_6c356e75addc23cb0c5adcbf08cd159b",
+      "union_id": "on_18f4d1826b75c873de129f2bac37d6a2",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Rodrigo",
+      "en_name": "",
+      "email": "",
+      "open_id": "ou_f2ad1c02bed67ed2976ccce675a1ee14",
+      "union_id": "on_b49f18e3bdeb0334ccd54c815c804867",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Jazmín Nairn",
+      "en_name": "Jazmín Nairn - Compliance LATAM",
+      "email": "jazmin.nairn@velafi.com",
+      "open_id": "ou_84de25e161312172d08c80457ccf3f5a",
+      "union_id": "on_c3a4a3ff1df6ac4430e90216e6b35e0c",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Julieta Martin",
+      "en_name": "",
+      "email": "julieta.martin@velafi.com",
+      "open_id": "ou_a9e6d623a7c37f6ec44db948ca068d5e",
+      "union_id": "on_e4974211a8e3addfca702236c2ed095c",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Tania Contreras",
+      "en_name": "Tania Contreras - LATAM L&C",
+      "email": "tania.contreras@galactic.holdings",
+      "open_id": "ou_4f70dc389caa799bc61daa15cf962bc1",
+      "union_id": "on_af26d71a3e5a0bac0d0799623fd97f2f",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-6559338f1f690912ce1a9e7b4e545d33"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Ulises Rojas",
+      "en_name": "",
+      "email": "ulises.rojas@velafi.com",
+      "open_id": "ou_125bcd731569362ec23c8e6d2a575f28",
+      "union_id": "on_03d8b86730bf7c4ae63f9860a1515ca5",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "od-6559338f1f690912ce1a9e7b4e545d33"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Maggie Wu",
+      "en_name": "",
+      "email": "maggie@galactic.holdings",
+      "open_id": "ou_f6c21111a6d0abf26787258cea5bc9d5",
+      "union_id": "on_18538aea6420db7693091792249a1b5c",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "0"
+      ],
+      "is_activated": null,
+      "job_title": null
+    },
+    {
+      "name": "Violin",
+      "en_name": "",
+      "email": "violin.wang@galactic.holdings",
+      "open_id": "ou_2b4dfeb9f91af76e5418692a73455eff",
+      "union_id": "on_b8138e1e97636cff978beb60ddb0b6a9",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [
+        "0"
+      ],
+      "is_activated": null,
+      "job_title": null
+    }
+  ]
+}

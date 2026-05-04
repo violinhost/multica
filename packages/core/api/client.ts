@@ -10,6 +10,7 @@ import type {
   UpdateMemberRequest,
   VelafiQuickAddRequest,
   VelafiQuickAddResponse,
+  VelafiDirectorySearchResponse,
   ListIssuesParams,
   Agent,
   CreateAgentRequest,
@@ -859,6 +860,17 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  // Velafi fork: search the embedded Lark roster for autocomplete in the
+  // velafi-quick-add UI. q can be empty to fetch all (capped at 100).
+  // workspace_id is optional — when given, results are annotated with
+  // already_member so the UI can grey out existing members.
+  async velafiDirectorySearch(workspaceId: string, q: string): Promise<VelafiDirectorySearchResponse> {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (workspaceId) params.set("workspace_id", workspaceId);
+    return this.fetch(`/api/workspaces/${workspaceId}/velafi/directory/search?${params}`);
   }
 
   async updateMember(workspaceId: string, memberId: string, data: UpdateMemberRequest): Promise<MemberWithUser> {

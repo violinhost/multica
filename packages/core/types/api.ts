@@ -105,6 +105,18 @@ export interface VelafiQuickAddRequest {
   role?: MemberRole;
 }
 
+// Velafi fork: directory-search response (autocomplete data source).
+export interface VelafiDirectoryEntry {
+  name: string;
+  email: string;
+  job_title?: string;
+  already_member: boolean;
+}
+
+export interface VelafiDirectorySearchResponse {
+  results: VelafiDirectoryEntry[];
+}
+
 export interface VelafiQuickAddResponse {
   user: {
     id: string;

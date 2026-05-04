@@ -272,6 +272,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Velafi fork: direct-add member by email (skip invitation roundtrip).
 					// See server/internal/handler/velafi_quick_add.go.
 					r.Post("/velafi/quick-add", h.VelafiQuickAdd)
+					// Velafi fork: directory search for autocomplete (Lark roster).
+					// See server/internal/handler/velafi_directory.go.
+					r.Get("/velafi/directory/search", h.VelafiDirectorySearch)
 					r.Route("/members/{memberId}", func(r chi.Router) {
 						r.Patch("/", h.UpdateMember)
 						r.Delete("/", h.DeleteMember)
