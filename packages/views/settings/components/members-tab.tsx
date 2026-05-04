@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
-import type { MemberWithUser, MemberRole, Invitation } from "@multica/core/types";
+import type { MemberWithUser, MemberRole, Invitation, VelafiDirectoryEntry } from "@multica/core/types";
 import { Input } from "@multica/ui/components/ui/input";
 import { Button } from "@multica/ui/components/ui/button";
 import { Card, CardContent } from "@multica/ui/components/ui/card";
 import { Badge } from "@multica/ui/components/ui/badge";
+import { Avatar, AvatarFallback } from "@multica/ui/components/ui/avatar";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -211,10 +212,47 @@ export function MembersTab() {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: invitations = [] } = useQuery(invitationListOptions(wsId));
 
-  const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("member");
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const [quickAddLoading, setQuickAddLoading] = useState<string | null>(null); // email being added, null when idle
+
+  // Velafi-quick-add autocomplete state.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+
+  // Fetch all Velafi roster (capped at 100) once per workspace; client-side
+  // filter on each keystroke. Tenant size <100 so this is cheap.
+  const { data: directoryResp } = useQuery({
+    queryKey: ["velafi-directory", wsId],
+    queryFn: () => api.velafiDirectorySearch(wsId, ""),
+    staleTime: 5 * 60_000,
+    enabled: !!wsId,
+  });
+  const allEntries = directoryResp?.results ?? [];
+
+  // Client-side filter on the cached roster.
+  const filteredEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return allEntries.slice(0, 50);
+    return allEntries
+      .filter((e) => {
+        const hay = `${e.name} ${e.email} ${e.job_title ?? ""}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 20);
+  }, [allEntries, searchQuery]);
+
+  // Close dropdown when clicking outside.
+  useEffect(() => {
+    if (!showDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showDropdown]);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [invitationActionId, setInvitationActionId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
@@ -229,46 +267,27 @@ export function MembersTab() {
   const isOwner = currentMember?.role === "owner";
   const ownerCount = members.filter((m) => m.role === "owner").length;
 
-  const handleInviteMember = async () => {
-    if (!workspace) return;
-    setInviteLoading(true);
-    try {
-      await api.createMember(workspace.id, {
-        email: inviteEmail,
-        role: inviteRole,
-      });
-      setInviteEmail("");
-      setInviteRole("member");
-      qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
-      toast.success("Invitation sent");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to send invitation");
-    } finally {
-      setInviteLoading(false);
-    }
-  };
-
   // Velafi fork: direct add member without invitation/email confirmation.
   // Restricted to Velafi tenant domains (velafi.com / galactic.holdings).
-  const handleVelafiQuickAdd = async () => {
-    if (!workspace) return;
-    setQuickAddLoading(true);
+  // Click on a roster entry → immediately add with the currently selected role.
+  const handleVelafiQuickAddByEntry = async (entry: VelafiDirectoryEntry) => {
+    if (!workspace || entry.already_member || quickAddLoading) return;
+    setQuickAddLoading(entry.email);
     try {
       const result = await api.velafiQuickAdd(workspace.id, {
-        email: inviteEmail,
+        email: entry.email,
         role: inviteRole,
       });
-      setInviteEmail("");
-      setInviteRole("member");
       qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
-      const pending = result.is_pending_login
-        ? " (pending first login — they'll be linked when they sign in via SSO)"
-        : "";
+      qc.invalidateQueries({ queryKey: ["velafi-directory", wsId] });
+      const pending = result.is_pending_login ? " (pending first login)" : "";
       toast.success(`Added ${result.user.name || result.user.email}${pending}`);
+      setSearchQuery("");
+      setShowDropdown(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to add member");
     } finally {
-      setQuickAddLoading(false);
+      setQuickAddLoading(null);
     }
   };
 
@@ -343,18 +362,70 @@ export function MembersTab() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 <Plus className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Invite member</h3>
+                <h3 className="text-sm font-medium">Add member</h3>
               </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto_auto]">
-                <Input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="user@company.com"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && inviteEmail.trim()) handleVelafiQuickAdd();
-                  }}
-                />
+              {/* Velafi fork: type a name → autocomplete dropdown shows matching
+                  Lark roster entries (avatar + name + email) → click to add. */}
+              <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                <div className="relative" ref={dropdownContainerRef}>
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setShowDropdown(true);
+                    }}
+                    onFocus={() => setShowDropdown(true)}
+                    placeholder="Search by name or email..."
+                  />
+                  {showDropdown && filteredEntries.length > 0 && (
+                    <div
+                      className="absolute top-full left-0 right-0 mt-1 z-50 max-h-80 overflow-y-auto rounded-md border bg-popover shadow-md"
+                    >
+                      {filteredEntries.map((entry) => {
+                        const isAdding = quickAddLoading === entry.email;
+                        const initials = entry.name
+                          ? entry.name.charAt(0).toUpperCase()
+                          : entry.email.charAt(0).toUpperCase();
+                        return (
+                          <button
+                            key={entry.email}
+                            type="button"
+                            disabled={entry.already_member || !!quickAddLoading}
+                            onClick={() => handleVelafiQuickAddByEntry(entry)}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Avatar size="sm">
+                              <AvatarFallback>{initials}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium">
+                                {entry.name || entry.email}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {entry.email}
+                                {entry.job_title ? ` · ${entry.job_title}` : ""}
+                              </div>
+                            </div>
+                            {entry.already_member && (
+                              <Badge variant="secondary" className="shrink-0 text-[10px]">
+                                Member
+                              </Badge>
+                            )}
+                            {isAdding && (
+                              <span className="shrink-0 text-xs text-muted-foreground">Adding…</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {showDropdown && searchQuery && filteredEntries.length === 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
+                      No Velafi members match "{searchQuery}".
+                    </div>
+                  )}
+                </div>
                 <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
                   <SelectTrigger size="sm">
                     <SelectValue>{() => roleConfig[inviteRole].label}</SelectValue>
@@ -364,31 +435,7 @@ export function MembersTab() {
                     <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
                   </SelectContent>
                 </Select>
-                {/* Velafi fork: direct-add (no invitation roundtrip) is the primary CTA for
-                    internal Velafi members. The original "Invite" (sends email confirmation)
-                    is kept as a secondary option for external collaborators or non-Velafi
-                    domains. */}
-                <Button
-                  onClick={handleVelafiQuickAdd}
-                  disabled={quickAddLoading || inviteLoading || !inviteEmail.trim()}
-                >
-                  {quickAddLoading ? "Adding..." : "Add"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleInviteMember}
-                  disabled={inviteLoading || quickAddLoading || !inviteEmail.trim()}
-                  title="Send an invitation email instead of adding directly"
-                >
-                  {inviteLoading ? "Inviting..." : "Invite via email"}
-                </Button>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                <span className="font-medium text-foreground">Add</span> directly joins
-                Velafi tenant members (no email confirmation needed).{" "}
-                <span className="font-medium text-foreground">Invite via email</span>{" "}
-                is for external collaborators or when the user isn't yet in your tenant.
-              </p>
             </CardContent>
           </Card>
         )}
