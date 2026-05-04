@@ -120,7 +120,7 @@ const INSTALL_CMD = "curl -fsSL https://raw.githubusercontent.com/multica-ai/mul
 const CONFIGURE_CMD = `multica config set server_url https://multica.velafi.ai
 multica config set app_url https://multica.velafi.ai`;
 
-const LOGIN_CMD = "multica login --token <YOUR_TOKEN>";
+const LOGIN_CMD = "multica login";
 
 const START_CMD = `multica daemon start --device-name "my-ec2-instance"
 multica daemon status`;
@@ -211,7 +211,7 @@ function InstructionsStep({
           {/* Step 3: Login */}
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              3. Login with a personal access token
+              3. Login (browser opens automatically)
             </div>
             <CodeBlock
               code={LOGIN_CMD}
@@ -220,11 +220,13 @@ function InstructionsStep({
               onCopy={onCopy}
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Create one in{" "}
-              <span className="font-medium text-foreground">
-                Settings → Tokens
-              </span>
-              .
+              A browser window opens; sign in with your existing Lark/SSO
+              session — the CLI captures the token automatically. (For
+              non-interactive setups, run{" "}
+              <span className="font-mono text-foreground">multica login --token</span>{" "}
+              and paste a PAT from{" "}
+              <span className="font-medium text-foreground">Settings → API Tokens</span>
+              .)
             </p>
           </div>
 
