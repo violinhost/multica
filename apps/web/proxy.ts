@@ -22,6 +22,18 @@ export function proxy(req: NextRequest) {
   const hasSession = req.cookies.has("multica_logged_in");
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
+  // --- Velafi self-host: /onboarding is dead route ---
+  // New users come in via velafi-quick-add or first OIDC login, both of
+  // which MarkUserOnboarded server-side, so the upstream questionnaire
+  // is never the right destination on Velafi. Edge intercept here gives
+  // a clean 307 (no HTML body — page-level redirect was generating a
+  // 1s meta-refresh that flashed the questionnaire UI).
+  if (pathname === "/onboarding") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url, 307);
+  }
+
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
   // Old bookmarks and clients that hit us before the slug migration would
   // otherwise 404 since the route moved under [workspaceSlug].
@@ -47,9 +59,13 @@ export function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // --- Root path: redirect logged-in users to their last workspace ---
+  // --- Root path: login-first entry ---
   if (pathname === "/") {
-    if (!hasSession) return NextResponse.next();
+    if (!hasSession) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
 
     if (lastSlug) {
       const url = req.nextUrl.clone();
@@ -57,8 +73,9 @@ export function proxy(req: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // No last_workspace_slug cookie → let landing page pick the first workspace
-    // client-side (features/landing/components/redirect-if-authenticated.tsx).
+    // Logged-in but no last_workspace_slug cookie yet (first login / cookie
+    // cleared) — let the root page resolve the correct post-auth destination
+    // client-side.
     return NextResponse.next();
   }
 
@@ -68,6 +85,7 @@ export function proxy(req: NextRequest) {
 export const config = {
   matcher: [
     "/",
+    "/onboarding",
     "/issues/:path*",
     "/projects/:path*",
     "/agents/:path*",
