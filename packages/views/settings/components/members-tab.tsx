@@ -214,6 +214,7 @@ export function MembersTab() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("member");
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [invitationActionId, setInvitationActionId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
@@ -244,6 +245,30 @@ export function MembersTab() {
       toast.error(e instanceof Error ? e.message : "Failed to send invitation");
     } finally {
       setInviteLoading(false);
+    }
+  };
+
+  // Velafi fork: direct add member without invitation/email confirmation.
+  // Restricted to Velafi tenant domains (velafi.com / galactic.holdings).
+  const handleVelafiQuickAdd = async () => {
+    if (!workspace) return;
+    setQuickAddLoading(true);
+    try {
+      const result = await api.velafiQuickAdd(workspace.id, {
+        email: inviteEmail,
+        role: inviteRole,
+      });
+      setInviteEmail("");
+      setInviteRole("member");
+      qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
+      const pending = result.is_pending_login
+        ? " (pending first login — they'll be linked when they sign in via SSO)"
+        : "";
+      toast.success(`Added ${result.user.name || result.user.email}${pending}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add member");
+    } finally {
+      setQuickAddLoading(false);
     }
   };
 
@@ -320,14 +345,14 @@ export function MembersTab() {
                 <Plus className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-medium">Invite member</h3>
               </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]">
+              <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto_auto]">
                 <Input
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="user@company.com"
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && inviteEmail.trim()) handleInviteMember();
+                    if (e.key === "Enter" && inviteEmail.trim()) handleVelafiQuickAdd();
                   }}
                 />
                 <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
@@ -339,13 +364,31 @@ export function MembersTab() {
                     <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
                   </SelectContent>
                 </Select>
+                {/* Velafi fork: direct-add (no invitation roundtrip) is the primary CTA for
+                    internal Velafi members. The original "Invite" (sends email confirmation)
+                    is kept as a secondary option for external collaborators or non-Velafi
+                    domains. */}
                 <Button
-                  onClick={handleInviteMember}
-                  disabled={inviteLoading || !inviteEmail.trim()}
+                  onClick={handleVelafiQuickAdd}
+                  disabled={quickAddLoading || inviteLoading || !inviteEmail.trim()}
                 >
-                  {inviteLoading ? "Inviting..." : "Invite"}
+                  {quickAddLoading ? "Adding..." : "Add"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleInviteMember}
+                  disabled={inviteLoading || quickAddLoading || !inviteEmail.trim()}
+                  title="Send an invitation email instead of adding directly"
+                >
+                  {inviteLoading ? "Inviting..." : "Invite via email"}
                 </Button>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                <span className="font-medium text-foreground">Add</span> directly joins
+                Velafi tenant members (no email confirmation needed).{" "}
+                <span className="font-medium text-foreground">Invite via email</span>{" "}
+                is for external collaborators or when the user isn't yet in your tenant.
+              </p>
             </CardContent>
           </Card>
         )}
