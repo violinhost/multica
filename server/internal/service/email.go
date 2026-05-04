@@ -23,13 +23,18 @@ type EmailService struct {
 
 func NewEmailService() *EmailService {
 	apiKey := os.Getenv("RESEND_API_KEY")
-	from := os.Getenv("RESEND_FROM_EMAIL")
-	if from == "" {
-		from = "noreply@multica.ai"
-	}
+	from := strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL"))
 
 	var client *resend.Client
 	if apiKey != "" {
+		// Velafi self-host: refuse to silently fall back to a multica.ai
+		// sender when RESEND_FROM_EMAIL is missing. Production must set this
+		// explicitly (e.g. `Multica <noreply@velafi.ai>`). Crash at startup
+		// so a misconfig is loud, not silently sending from the upstream
+		// domain.
+		if from == "" {
+			panic("RESEND_API_KEY set but RESEND_FROM_EMAIL empty; refusing to use upstream multica.ai sender")
+		}
 		client = resend.NewClient(apiKey)
 	}
 
@@ -71,7 +76,14 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 func (s *EmailService) SendInvitationEmail(to, inviterName, workspaceName, invitationID string) error {
 	appURL := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
 	if appURL == "" {
-		appURL = "https://app.multica.ai"
+		// Velafi self-host: refuse to silently emit upstream `https://app.multica.ai`
+		// links — they 404 on Velafi deployments. FRONTEND_ORIGIN must be the
+		// public deployment URL. In dev (no Resend client) we substitute a
+		// clearly-bogus URL so the printf still has shape.
+		if s.client != nil {
+			return fmt.Errorf("FRONTEND_ORIGIN not set; cannot generate invitation URL")
+		}
+		appURL = "https://example.invalid"
 	}
 	inviteURL := fmt.Sprintf("%s/invite/%s", appURL, invitationID)
 

@@ -30,7 +30,7 @@ Multica uses email-based magic link authentication via [Resend](https://resend.c
 | Variable | Description |
 |----------|-------------|
 | `RESEND_API_KEY` | Your Resend API key |
-| `RESEND_FROM_EMAIL` | Sender email address (default: `noreply@multica.ai`) |
+| `RESEND_FROM_EMAIL` | Sender email address (e.g. `noreply@your-domain.com`). **Required when `RESEND_API_KEY` is set** — leaving it empty in production panics the server at startup rather than silently sending mail branded with the upstream `multica.ai` domain. |
 
 > **Note:** If Resend is not configured, generated verification codes are printed to backend logs. A fixed local testing code is disabled by default; to opt in on a private test instance, set `APP_ENV=development` and `MULTICA_DEV_VERIFICATION_CODE` to a 6-digit value. It is ignored when `APP_ENV=production`.
 
@@ -73,6 +73,8 @@ For file uploads and attachments, configure S3 and CloudFront:
 | `COOKIE_DOMAIN` | Optional `Domain` attribute for session + CloudFront cookies. **Leave empty** for single-host deployments (localhost, LAN IP, or a single hostname). Only set it when the frontend and backend sit on different subdomains of one registered domain (e.g. `.example.com`). **Do not use an IP literal** — RFC 6265 forbids IP addresses in the cookie `Domain` attribute and browsers will drop such `Set-Cookie` headers. |
 
 The `Secure` flag on session cookies is derived automatically from the scheme of `FRONTEND_ORIGIN`: HTTPS origins get `Secure` cookies; plain-HTTP origins (LAN / private-network self-host) get non-secure cookies so the browser can actually store them.
+
+`FRONTEND_ORIGIN` is **also required when sending invitation email** (`SendInvitationEmail` returns an error if it is empty in production). The previous silent fallback to `https://app.multica.ai` was removed so self-hosts cannot accidentally email invitee links pointing at the upstream domain.
 
 ### Server
 
