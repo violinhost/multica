@@ -83,7 +83,14 @@ function MemberRow({
     <div className="flex items-center gap-3 px-4 py-3">
       <ActorAvatar actorType="member" actorId={member.user_id} size={32} />
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium truncate">{member.name}</div>
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-medium truncate">{member.name}</div>
+          {member.is_pending_login && (
+            <Badge variant="outline" className="shrink-0 text-[10px] font-normal text-muted-foreground" title="Hasn't signed in via Lark/SSO yet — will activate on first login">
+              Pending login
+            </Badge>
+          )}
+        </div>
         <div className="text-xs text-muted-foreground truncate">{member.email}</div>
       </div>
       {showMenu && (

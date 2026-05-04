@@ -62,6 +62,10 @@ export interface MemberWithUser {
   name: string;
   email: string;
   avatar_url: string | null;
+  // Velafi fork: true iff the user has never completed their first OIDC
+  // login (external_user_id IS NULL). Stub users created via velafi-quick-add
+  // start as pending; flips to false once they sign in via Lark/Authentik.
+  is_pending_login?: boolean;
 }
 
 export interface Invitation {
