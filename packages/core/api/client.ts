@@ -8,6 +8,8 @@ import type {
   UpdateMeRequest,
   CreateMemberRequest,
   UpdateMemberRequest,
+  VelafiQuickAddRequest,
+  VelafiQuickAddResponse,
   ListIssuesParams,
   Agent,
   CreateAgentRequest,
@@ -843,6 +845,17 @@ export class ApiClient {
 
   async createMember(workspaceId: string, data: CreateMemberRequest): Promise<Invitation> {
     return this.fetch(`/api/workspaces/${workspaceId}/members`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Velafi fork: direct-add member by email (skip invitation/email confirmation).
+  // Restricted to Velafi tenant domains (velafi.com, galactic.holdings) server-side.
+  // If the user has no Multica row yet, creates a stub user (external_user_id NULL,
+  // is_pending_login=true) which will be linked on first OIDC login.
+  async velafiQuickAdd(workspaceId: string, data: VelafiQuickAddRequest): Promise<VelafiQuickAddResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/velafi/quick-add`, {
       method: "POST",
       body: JSON.stringify(data),
     });
