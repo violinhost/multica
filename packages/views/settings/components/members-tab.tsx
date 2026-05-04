@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import type { MemberWithUser, MemberRole, Invitation, VelafiDirectoryEntry } from "@multica/core/types";
@@ -218,7 +219,9 @@ export function MembersTab() {
   // Velafi-quick-add autocomplete state.
   const [searchQuery, setSearchQuery] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
-  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Fetch all Velafi roster (capped at 100) once per workspace; client-side
   // filter on each keystroke. Tenant size <100 so this is cheap.
@@ -230,23 +233,48 @@ export function MembersTab() {
   });
   const allEntries = directoryResp?.results ?? [];
 
-  // Client-side filter on the cached roster.
+  // Client-side filter on the cached roster. Only render results when the
+  // user has typed at least 1 character — prevents rendering 71 rows on focus.
   const filteredEntries = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return allEntries.slice(0, 50);
+    if (!q) return [];
     return allEntries
       .filter((e) => {
         const hay = `${e.name} ${e.email} ${e.job_title ?? ""}`.toLowerCase();
         return hay.includes(q);
       })
-      .slice(0, 20);
+      .slice(0, 12);
   }, [allEntries, searchQuery]);
 
-  // Close dropdown when clicking outside.
+  // Position the portal dropdown beneath the input. Recompute on scroll/resize
+  // while the dropdown is open.
+  useLayoutEffect(() => {
+    if (!showDropdown || !inputRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const compute = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (r) setDropdownRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    compute();
+    window.addEventListener("scroll", compute, true);
+    window.addEventListener("resize", compute);
+    return () => {
+      window.removeEventListener("scroll", compute, true);
+      window.removeEventListener("resize", compute);
+    };
+  }, [showDropdown]);
+
+  // Close dropdown on outside click.
   useEffect(() => {
     if (!showDropdown) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (
+        inputRef.current && !inputRef.current.contains(t) &&
+        dropdownRef.current && !dropdownRef.current.contains(t)
+      ) {
         setShowDropdown(false);
       }
     };
@@ -365,24 +393,47 @@ export function MembersTab() {
                 <h3 className="text-sm font-medium">Add member</h3>
               </div>
               {/* Velafi fork: type a name → autocomplete dropdown shows matching
-                  Lark roster entries (avatar + name + email) → click to add. */}
+                  Lark roster entries (avatar + name + email) → click to add.
+                  Dropdown rendered via React Portal to escape Card overflow. */}
               <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-                <div className="relative" ref={dropdownContainerRef}>
-                  <Input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setShowDropdown(true);
+                <Input
+                  ref={inputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setShowDropdown(true);
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  placeholder="Type to search Velafi members…"
+                />
+                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
+                  <SelectTrigger size="sm">
+                    <SelectValue>{() => roleConfig[inviteRole].label}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">{roleConfig.member.label}</SelectItem>
+                    <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {showDropdown && dropdownRect && searchQuery && typeof document !== "undefined" &&
+                createPortal(
+                  <div
+                    ref={dropdownRef}
+                    className="absolute z-[1000] max-h-72 overflow-y-auto rounded-md border bg-popover shadow-lg"
+                    style={{
+                      top: dropdownRect.top,
+                      left: dropdownRect.left,
+                      width: dropdownRect.width,
                     }}
-                    onFocus={() => setShowDropdown(true)}
-                    placeholder="Search by name or email..."
-                  />
-                  {showDropdown && filteredEntries.length > 0 && (
-                    <div
-                      className="absolute top-full left-0 right-0 mt-1 z-50 max-h-80 overflow-y-auto rounded-md border bg-popover shadow-md"
-                    >
-                      {filteredEntries.map((entry) => {
+                  >
+                    {filteredEntries.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">
+                        No Velafi members match "{searchQuery}".
+                      </div>
+                    ) : (
+                      filteredEntries.map((entry) => {
                         const isAdding = quickAddLoading === entry.email;
                         const initials = entry.name
                           ? entry.name.charAt(0).toUpperCase()
@@ -408,34 +459,19 @@ export function MembersTab() {
                               </div>
                             </div>
                             {entry.already_member && (
-                              <Badge variant="secondary" className="shrink-0 text-[10px]">
-                                Member
-                              </Badge>
+                              <Badge variant="secondary" className="shrink-0 text-[10px]">Member</Badge>
                             )}
                             {isAdding && (
                               <span className="shrink-0 text-xs text-muted-foreground">Adding…</span>
                             )}
                           </button>
                         );
-                      })}
-                    </div>
-                  )}
-                  {showDropdown && searchQuery && filteredEntries.length === 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
-                      No Velafi members match "{searchQuery}".
-                    </div>
-                  )}
-                </div>
-                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
-                  <SelectTrigger size="sm">
-                    <SelectValue>{() => roleConfig[inviteRole].label}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">{roleConfig.member.label}</SelectItem>
-                    <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                      })
+                    )}
+                  </div>,
+                  document.body
+                )
+              }
             </CardContent>
           </Card>
         )}
