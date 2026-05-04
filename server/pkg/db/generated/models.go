@@ -314,21 +314,6 @@ type IssueToLabel struct {
 	LabelID pgtype.UUID `json:"label_id"`
 }
 
-type LarkBotSession struct {
-	ID                pgtype.UUID        `json:"id"`
-	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
-	MulticaUserID     pgtype.UUID        `json:"multica_user_id"`
-	LarkOpenID        string             `json:"lark_open_id"`
-	LarkUnionID       string             `json:"lark_union_id"`
-	PatTokenID        pgtype.UUID        `json:"pat_token_id"`
-	PatTokenPlaintext pgtype.Text        `json:"pat_token_plaintext"`
-	Status            string             `json:"status"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	AuthorizedAt      pgtype.Timestamptz `json:"authorized_at"`
-	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
-	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
-}
-
 type Member struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

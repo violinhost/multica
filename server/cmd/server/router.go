@@ -202,16 +202,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Public API
 	r.Get("/api/config", h.GetConfig)
 
-	// Velafi fork: Lark bot OAuth flow.
-	//   /init-session, /poll → admin (X-Lark-Bot-Token shared secret)
-	//   /authorize           → user OIDC (wired below in the user-auth group)
-	// See server/internal/handler/lark_bot.go.
-	r.Route("/api/lark-bot", func(r chi.Router) {
-		r.With(middleware.LarkBotAdmin()).Post("/init-session", h.LarkBotInitSession)
-		r.With(middleware.LarkBotAdmin()).Get("/poll/{sessionId}", h.LarkBotPoll)
-		r.With(middleware.LarkBotAdmin()).Get("/poll-by-union/{unionId}", h.LarkBotPollByUnion)
-	})
-
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
 		r.Use(middleware.DaemonAuth(queries, patCache, daemonTokenCache))
@@ -260,8 +250,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/cli-token", h.IssueCliToken)
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
-		// Velafi fork: Lark bot OAuth — user-authorize side of the flow.
-		r.Post("/api/lark-bot/authorize", h.LarkBotAuthorize)
 
 		r.Route("/api/workspaces", func(r chi.Router) {
 			r.Get("/", h.ListWorkspaces)
