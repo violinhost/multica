@@ -4,9 +4,9 @@ import { useState } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
 import { useLocale } from "../../i18n";
 
-const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
-const SETUP_CMD = "multica setup";
+const INSTALL_CMD = "brew install multica";
+const SETUP_CMD =
+  "multica setup self-host --server-url https://multica.velafi.ai --app-url https://multica.velafi.ai";
 
 /**
  * Scenario-first CLI section. Copy leans into servers / remote dev
