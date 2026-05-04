@@ -115,7 +115,7 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
 // Step 1: Installation instructions
 // ---------------------------------------------------------------------------
 
-const INSTALL_CMD = "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
+const INSTALL_CMD = "brew install multica";
 
 const CONFIGURE_CMD = `multica config set server_url https://multica.velafi.ai
 multica config set app_url https://multica.velafi.ai`;
