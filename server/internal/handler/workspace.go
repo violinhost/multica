@@ -322,6 +322,11 @@ type MemberWithUserResponse struct {
 	Name        string  `json:"name"`
 	Email       string  `json:"email"`
 	AvatarURL   *string `json:"avatar_url"`
+	// Velafi fork: true iff the user has not completed their first OIDC login
+	// (external_user_id IS NULL). Used by frontend to render a "pending"
+	// badge on stub users created via velafi-quick-add. Becomes false
+	// automatically once the user's first OIDC login links external_user_id.
+	IsPendingLogin bool `json:"is_pending_login"`
 }
 
 func (h *Handler) ListMembersWithUser(w http.ResponseWriter, r *http.Request) {
@@ -340,14 +345,15 @@ func (h *Handler) ListMembersWithUser(w http.ResponseWriter, r *http.Request) {
 	resp := make([]MemberWithUserResponse, len(members))
 	for i, m := range members {
 		resp[i] = MemberWithUserResponse{
-			ID:          uuidToString(m.ID),
-			WorkspaceID: uuidToString(m.WorkspaceID),
-			UserID:      uuidToString(m.UserID),
-			Role:        m.Role,
-			CreatedAt:   timestampToString(m.CreatedAt),
-			Name:        m.UserName,
-			Email:       m.UserEmail,
-			AvatarURL:   textToPtr(m.UserAvatarUrl),
+			ID:             uuidToString(m.ID),
+			WorkspaceID:    uuidToString(m.WorkspaceID),
+			UserID:         uuidToString(m.UserID),
+			Role:           m.Role,
+			CreatedAt:      timestampToString(m.CreatedAt),
+			Name:           m.UserName,
+			Email:          m.UserEmail,
+			AvatarURL:      textToPtr(m.UserAvatarUrl),
+			IsPendingLogin: !m.UserExternalUserID.Valid,
 		}
 	}
 
@@ -361,14 +367,15 @@ type CreateMemberRequest struct {
 
 func memberWithUserResponse(member db.Member, user db.User) MemberWithUserResponse {
 	return MemberWithUserResponse{
-		ID:          uuidToString(member.ID),
-		WorkspaceID: uuidToString(member.WorkspaceID),
-		UserID:      uuidToString(member.UserID),
-		Role:        member.Role,
-		CreatedAt:   timestampToString(member.CreatedAt),
-		Name:        user.Name,
-		Email:       user.Email,
-		AvatarURL:   textToPtr(user.AvatarUrl),
+		ID:             uuidToString(member.ID),
+		WorkspaceID:    uuidToString(member.WorkspaceID),
+		UserID:         uuidToString(member.UserID),
+		Role:           member.Role,
+		CreatedAt:      timestampToString(member.CreatedAt),
+		Name:           user.Name,
+		Email:          user.Email,
+		AvatarURL:      textToPtr(user.AvatarUrl),
+		IsPendingLogin: !user.ExternalUserID.Valid,
 	}
 }
 
