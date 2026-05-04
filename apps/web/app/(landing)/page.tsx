@@ -1,29 +1,10 @@
-import type { Metadata } from "next";
-import { MulticaLanding } from "@/features/landing/components/multica-landing";
-import { RedirectIfAuthenticated } from "@/features/landing/components/redirect-if-authenticated";
+// Velafi self-host fork: root `/` is NOT a marketing landing — every visitor
+// goes to /login (which auto-redirects through OIDC). The upstream
+// MulticaLanding / about / changelog / download pages are dead code in this
+// deployment but kept under (landing)/ so the upstream merge surface stays
+// small. Only this top-level page.tsx is overridden.
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: {
-    absolute: "Multica — Project Management for Human + Agent Teams",
-  },
-  description:
-    "Open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
-  openGraph: {
-    title: "Multica — Project Management for Human + Agent Teams",
-    description:
-      "Manage your human + agent workforce in one place.",
-    url: "/",
-  },
-  alternates: {
-    canonical: "/",
-  },
-};
-
-export default function LandingPage() {
-  return (
-    <>
-      <RedirectIfAuthenticated />
-      <MulticaLanding />
-    </>
-  );
+export default function RootRedirect() {
+  redirect("/login");
 }
