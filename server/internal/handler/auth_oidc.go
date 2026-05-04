@@ -369,5 +369,17 @@ func (h *Handler) findOrLinkUserByOIDC(
 		slog.Warn("oidc external identity bind failed (non-fatal)",
 			"user_id", uuidToString(created.ID), "error", err)
 	}
+
+	// Velafi self-host: skip the upstream onboarding/questionnaire flow
+	// for OIDC sign-ups. Mark onboarded_at = now() at create time so the
+	// new user lands directly at workspaces (or /workspaces/new if zero
+	// memberships) instead of hitting the questionnaire. The fork's
+	// (auth)/onboarding/page.tsx is a server-side redirect for safety,
+	// but this server-side mark removes the questionnaire from
+	// resolvePostAuthDestination's decision tree entirely.
+	if _, err := h.Queries.MarkUserOnboarded(ctx, created.ID); err != nil {
+		slog.Warn("oidc mark-onboarded failed (non-fatal)",
+			"user_id", uuidToString(created.ID), "error", err)
+	}
 	return created, true, nil
 }
