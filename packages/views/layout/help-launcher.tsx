@@ -9,7 +9,7 @@ import {
 } from "@multica/ui/components/ui/dropdown-menu";
 import { useT } from "../i18n";
 
-const DOCS_URL = "https://multica.ai/docs";
+const DOCS_URL = "https://multica.velafi.ai/docs";
 
 export function HelpLauncher() {
   const { t } = useT("layout");
