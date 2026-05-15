@@ -118,8 +118,12 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
 
 const INSTALL_CMD = "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
 
-const CONFIGURE_CMD = `multica config set server_url https://api.multica.ai
-multica config set app_url https://multica.ai`;
+// Velafi (2026-05-15): self-host endpoints (NOT upstream multica.ai).
+// Remote machines connect via the public Velafi host. Caddy + cloudflared
+// proxy /api/* to the backend, so both server_url and app_url use the
+// same host (path-based routing).
+const CONFIGURE_CMD = `multica config set server_url https://multica.velafi.ai
+multica config set app_url https://multica.velafi.ai`;
 
 const LOGIN_CMD = "multica login --token <YOUR_TOKEN>";
 
