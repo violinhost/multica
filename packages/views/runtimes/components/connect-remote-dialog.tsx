@@ -116,7 +116,10 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
 // Step 1: Installation instructions
 // ---------------------------------------------------------------------------
 
-const INSTALL_CMD = "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
+// Velafi (2026-05-15): short Velafi-hosted install URL. Caddy /install
+// route 302-redirects to upstream install script (kept off-screen from
+// the user-facing copy). See multica-web-entry.Caddyfile.
+const INSTALL_CMD = "curl -sSL https://multica.velafi.ai/install | sh";
 
 // Velafi (2026-05-15): self-host endpoints (NOT upstream multica.ai).
 // Remote machines connect via the public Velafi host. Caddy + cloudflared
