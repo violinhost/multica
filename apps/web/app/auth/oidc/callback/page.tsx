@@ -104,7 +104,39 @@ function CallbackContent() {
           } catch {
             /* not authenticated — fall through and show the original error */
           }
-          setError(err instanceof Error ? err.message : "Login failed");
+
+          // Velafi (2026-05-15): wrong-user fallback. If the backend rejects
+          // the OIDC exchange with "user registration is disabled" (typical
+          // when Authentik silent-SSO'd as a different user — e.g. akadmin
+          // session leaked into Multica context), don't flash a cryptic
+          // error page. Instead navigate through Authentik's invalidation
+          // flow, which kills the akadmin authentik_session cookie and
+          // redirects back to /, where useEffect picks up a fresh OIDC
+          // login with no session conflict.
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (
+            typeof window !== "undefined" &&
+            /registration is disabled|email address or domain not allowed/i.test(errMsg)
+          ) {
+            // Add a one-time guard via sessionStorage so we don't loop if the
+            // user genuinely has no Multica binding (rare, but possible).
+            const guardKey = "velafi_wrong_user_recovery_attempted";
+            if (!sessionStorage.getItem(guardKey)) {
+              sessionStorage.setItem(guardKey, String(Date.now()));
+              window.location.href =
+                "/idp/if/flow/default-invalidation-flow/";
+              return;
+            }
+            // We already tried once and ended up here again → show clear
+            // message instead of looping.
+            setError(
+              "This account is not a Multica user. " +
+              "If you came from an admin session, please log out of admin and try again.",
+            );
+            return;
+          }
+
+          setError(errMsg);
         });
     }
   }, [searchParams, loginWithOIDC, oidcRedirectURI, router, qc]);
