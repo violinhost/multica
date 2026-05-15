@@ -188,12 +188,17 @@ function LoginPageContent() {
   // loaded (oidcAuthorizationEndpoint is empty until /api/config returns)
   // AND the health probe has confirmed Authentik is reachable — otherwise
   // we'd dump the user on a dead origin.
+  //
+  // Velafi (2026-05-15): no longer bail out on loggedOut. Auto-redirect even
+  // when ?logged_out=1, but include prompt=login so Authentik forces fresh
+  // authentication instead of silent-SSO'ing back to a leftover session (e.g.
+  // akadmin cookie pollution per 2026-05-15 incident). This removes the
+  // "You're signed out" interstitial that required an extra manual click.
   useEffect(() => {
     if (
       isLoading ||
       user ||
       forceEmail ||
-      loggedOut ||
       !oidcAuthorizationEndpoint ||
       !oidcClientID ||
       oidcCheck !== "healthy"
@@ -219,12 +224,18 @@ function LoginPageContent() {
     }
     const redirectUri =
       oidcRedirectURI || `${window.location.origin}/auth/oidc/callback`;
-    window.location.href = buildOIDCAuthorizeURL(
-      oidcAuthorizationEndpoint,
-      oidcClientID,
-      redirectUri,
-      oidcState,
+    const authorizeUrl = new URL(
+      buildOIDCAuthorizeURL(
+        oidcAuthorizationEndpoint,
+        oidcClientID,
+        redirectUri,
+        oidcState,
+      ),
     );
+    if (loggedOut) {
+      authorizeUrl.searchParams.set("prompt", "login");
+    }
+    window.location.href = authorizeUrl.toString();
   }, [
     isLoading,
     user,
@@ -343,38 +354,11 @@ function LoginPageContent() {
     );
   }
 
-  if (loggedOut && !user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">You&apos;re signed out</CardTitle>
-            <CardDescription>
-              Click below to sign in again.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center">
-            <Button onClick={() => {
-              const redirectUri =
-                oidcRedirectURI || `${window.location.origin}/auth/oidc/callback`;
-              const url = new URL(
-                buildOIDCAuthorizeURL(
-                  oidcAuthorizationEndpoint,
-                  oidcClientID,
-                  redirectUri,
-                  undefined,
-                ),
-              );
-              url.searchParams.set("prompt", "login");
-              window.location.href = url.toString();
-            }}>
-              Sign in with Lark
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Velafi (2026-05-15): "You're signed out" interstitial card removed per
+  // Violin's request. The useEffect above now handles ?logged_out=1 by
+  // auto-redirecting with prompt=login (forces Authentik fresh auth).
+  // Users land directly back at the Lark/Authentik login page after logout,
+  // no extra "click to sign in again" step.
 
   return (
     <div className="flex min-h-screen items-center justify-center">
