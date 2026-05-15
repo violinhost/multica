@@ -3,34 +3,20 @@ import { useAuthStore } from "../auth";
 import { paths } from "./paths";
 
 /**
- * Priority:
- *   !hasOnboarded                         → /onboarding
- *   hasOnboarded && has workspace         → /<first.slug>/issues
- *   hasOnboarded && zero workspaces       → /workspaces/new
+ * Priority (Velafi browser contract):
+ *   has workspace         → /<first.slug>/issues
+ *   zero workspaces       → /workspaces/new
  *
- * `onboarded_at` is the single source of truth for whether the user has
- * passed first-contact. Backend transactions (CreateWorkspace,
- * AcceptInvitation) atomically set this field whenever a user joins a
- * `member` row, so "has workspace but !onboarded" is now a
- * physically impossible state — see migration 065 for the existing-data
- * backfill that closed the door retroactively.
- *
- * Callers that need invitation-aware routing (callback / login) handle the
- * "un-onboarded with pending invites" branch themselves before calling
- * this resolver — this resolver only deals with the post-invite-check
- * destination.
+ * `/onboarding` is intentionally excluded from the normal browser login
+ * destination tree. Unexpected un-onboarded state should be handled as a
+ * data/identity anomaly, not as a user-visible fallback route.
  */
 export function resolvePostAuthDestination(
   workspaces: Workspace[],
-  hasOnboarded: boolean,
+  _hasOnboarded: boolean,
 ): string {
-  if (!hasOnboarded) {
-    return paths.onboarding();
-  }
-  const first = workspaces[0];
-  if (first) {
-    return paths.workspace(first.slug).issues();
-  }
+  const [first] = workspaces;
+  if (first) return paths.workspace(first.slug).issues();
   return paths.newWorkspace();
 }
 

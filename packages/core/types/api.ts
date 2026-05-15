@@ -27,9 +27,6 @@ export interface UpdateIssueRequest {
   due_date?: string | null;
   parent_issue_id?: string | null;
   project_id?: string | null;
-  /** Attachment IDs to bind to this issue alongside the description update.
-   *  Used by the description editor to register newly uploaded files so they
-   *  surface in `issueAttachments` and keep their preview Eye on refresh. */
   attachment_ids?: string[];
 }
 
@@ -100,6 +97,52 @@ export interface CreateMemberRequest {
 
 export interface UpdateMemberRequest {
   role: MemberRole;
+}
+
+// Velafi fork: direct-add member by email (skip invitation roundtrip).
+// Backend POST /api/workspaces/{wsId}/velafi/quick-add — see
+// server/internal/handler/velafi_quick_add.go.
+export interface VelafiQuickAddRequest {
+  email: string;
+  role?: MemberRole;
+}
+
+// Velafi fork: directory-search response (autocomplete data source).
+export interface VelafiDirectoryEntry {
+  name: string;
+  email: string;
+  job_title?: string;
+  already_member: boolean;
+}
+
+export interface VelafiDirectorySearchResponse {
+  results: VelafiDirectoryEntry[];
+}
+
+export interface VelafiQuickAddResponse {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    avatar_url: string | null;
+    onboarded_at: string | null;
+    onboarding_questionnaire: unknown;
+    starter_content_state: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  member: {
+    id: string;
+    workspace_id: string;
+    user_id: string;
+    role: MemberRole;
+    created_at: string;
+    name: string;
+    email: string;
+    is_pending_login: boolean;
+  };
+  is_pending_login: boolean;
+  was_user_created: boolean;
 }
 
 // Personal Access Tokens

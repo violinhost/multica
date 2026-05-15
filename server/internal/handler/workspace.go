@@ -314,14 +314,15 @@ func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 type MemberWithUserResponse struct {
-	ID          string  `json:"id"`
-	WorkspaceID string  `json:"workspace_id"`
-	UserID      string  `json:"user_id"`
-	Role        string  `json:"role"`
-	CreatedAt   string  `json:"created_at"`
-	Name        string  `json:"name"`
-	Email       string  `json:"email"`
-	AvatarURL   *string `json:"avatar_url"`
+	ID             string  `json:"id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	UserID         string  `json:"user_id"`
+	Role           string  `json:"role"`
+	CreatedAt      string  `json:"created_at"`
+	Name           string  `json:"name"`
+	Email          string  `json:"email"`
+	AvatarURL      *string `json:"avatar_url,omitempty"`
+	IsPendingLogin bool    `json:"is_pending_login"`
 }
 
 func (h *Handler) ListMembersWithUser(w http.ResponseWriter, r *http.Request) {
@@ -361,14 +362,15 @@ type CreateMemberRequest struct {
 
 func memberWithUserResponse(member db.Member, user db.User) MemberWithUserResponse {
 	return MemberWithUserResponse{
-		ID:          uuidToString(member.ID),
-		WorkspaceID: uuidToString(member.WorkspaceID),
-		UserID:      uuidToString(member.UserID),
-		Role:        member.Role,
-		CreatedAt:   timestampToString(member.CreatedAt),
-		Name:        user.Name,
-		Email:       user.Email,
-		AvatarURL:   textToPtr(user.AvatarUrl),
+		ID:             uuidToString(member.ID),
+		WorkspaceID:    uuidToString(member.WorkspaceID),
+		UserID:         uuidToString(member.UserID),
+		Role:           member.Role,
+		CreatedAt:      timestampToString(member.CreatedAt),
+		Name:           user.Name,
+		Email:          user.Email,
+		AvatarURL:      textToPtr(user.AvatarUrl),
+		IsPendingLogin: !user.ExternalUserID.Valid,
 	}
 }
 

@@ -4,18 +4,47 @@ import { useStore } from "zustand";
 interface ConfigState {
   cdnDomain: string;
   allowSignup: boolean;
-  googleClientId: string;
+  oidcIssuerURL: string;
+  oidcClientID: string;
+  oidcAuthorizationEndpoint: string;
+  oidcEndSessionEndpoint: string;
+  oidcRedirectURI: string;
   setCdnDomain: (domain: string) => void;
-  setAuthConfig: (config: { allowSignup: boolean; googleClientId?: string }) => void;
+  setAuthConfig: (config: {
+    allowSignup: boolean;
+    oidcIssuerURL?: string;
+    oidcClientID?: string;
+    oidcAuthorizationEndpoint?: string;
+    oidcEndSessionEndpoint?: string;
+    oidcRedirectURI?: string;
+  }) => void;
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
   cdnDomain: "",
   allowSignup: true,
-  googleClientId: "",
+  oidcIssuerURL: "",
+  oidcClientID: "",
+  oidcAuthorizationEndpoint: "",
+  oidcEndSessionEndpoint: "",
+  oidcRedirectURI: "",
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
-  setAuthConfig: ({ allowSignup, googleClientId = "" }) =>
-    set({ allowSignup, googleClientId }),
+  setAuthConfig: ({
+    allowSignup,
+    oidcIssuerURL = "",
+    oidcClientID = "",
+    oidcAuthorizationEndpoint = "",
+    oidcEndSessionEndpoint = "",
+    oidcRedirectURI = "",
+  }) =>
+    set({
+      allowSignup,
+      oidcIssuerURL,
+      oidcClientID,
+      oidcAuthorizationEndpoint,
+      oidcEndSessionEndpoint,
+      oidcRedirectURI,
+    }),
 }));
 
 export function useConfigStore(): ConfigState;

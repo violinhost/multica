@@ -122,6 +122,32 @@ func isProductionEnv() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production")
 }
 
+// isLoginMethodEnabled gates auth handlers by the LOGIN_METHODS env var (CSV
+// allowlist; e.g. "oidc" or "oidc,email"). When LOGIN_METHODS is unset or
+// empty the gate is open — that matches upstream behaviour for dev / non-
+// Velafi deployments.
+//
+// Velafi self-host context: LOGIN_METHODS=oidc historically only toggled
+// frontend UI; backend handlers were unconditionally open, so a compromised
+// galactic.holdings mailbox could complete /auth/send-code →
+// /auth/verify-code and bypass Lark SSO + MFA. Adding this check at the
+// /auth/send-code, /auth/verify-code, and /auth/google entry points closes
+// that gap (see ops/2026-05-08-security-scan-p0-email-code-bypass.md).
+//
+// /auth/oidc itself is the OIDC method, so it is never gated by this check.
+func isLoginMethodEnabled(method string) bool {
+	raw := strings.TrimSpace(os.Getenv("LOGIN_METHODS"))
+	if raw == "" {
+		return true
+	}
+	for _, m := range strings.Split(raw, ",") {
+		if strings.EqualFold(strings.TrimSpace(m), method) {
+			return true
+		}
+	}
+	return false
+}
+
 func isSixDigitCode(code string) bool {
 	if len(code) != 6 {
 		return false
@@ -251,6 +277,10 @@ func contains(slice []string, s string) bool {
 }
 
 func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
+	if !isLoginMethodEnabled("email") {
+		writeError(w, http.StatusForbidden, "email-code login is disabled on this instance")
+		return
+	}
 	var req SendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -333,6 +363,10 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
+	if !isLoginMethodEnabled("email") {
+		writeError(w, http.StatusForbidden, "email-code login is disabled on this instance")
+		return
+	}
 	var req VerifyCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -444,6 +478,10 @@ type googleUserInfo struct {
 }
 
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if !isLoginMethodEnabled("google") {
+		writeError(w, http.StatusForbidden, "google login is disabled on this instance")
+		return
+	}
 	var req GoogleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

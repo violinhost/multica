@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail, Search } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import type { MemberWithUser, MemberRole, Invitation } from "@multica/core/types";
+import type { VelafiDirectoryEntry } from "@multica/core/types/api";
 import { Input } from "@multica/ui/components/ui/input";
 import { Button } from "@multica/ui/components/ui/button";
 import { Card, CardContent } from "@multica/ui/components/ui/card";
@@ -84,8 +85,6 @@ function MemberRow({
   member: MemberWithUser;
   canManage: boolean;
   canManageOwners: boolean;
-  /** Total number of owners in this workspace — needed to gate demoting the
-   *  last owner per `workspace.go:497-507`. */
   ownerCount: number;
   isSelf: boolean;
   busy: boolean;
@@ -108,6 +107,9 @@ function MemberRow({
         <div className="text-sm font-medium truncate">{member.name}</div>
         <div className="text-xs text-muted-foreground truncate">{member.email}</div>
       </div>
+      {member.is_pending_login && (
+        <Badge variant="outline">{t(($) => $.members.pending_first_login)}</Badge>
+      )}
       {showMenu && (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -236,9 +238,12 @@ export function MembersTab() {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: invitations = [] } = useQuery(invitationListOptions(wsId));
 
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<MemberRole>("member");
-  const [inviteLoading, setInviteLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedEntry, setSelectedEntry] = useState<VelafiDirectoryEntry | null>(null);
+  const [selectedRole, setSelectedRole] = useState<MemberRole>("member");
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const [directoryResults, setDirectoryResults] = useState<VelafiDirectoryEntry[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [invitationActionId, setInvitationActionId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
@@ -253,22 +258,54 @@ export function MembersTab() {
   const isOwner = currentMember?.role === "owner";
   const ownerCount = members.filter((m) => m.role === "owner").length;
 
-  const handleInviteMember = async () => {
-    if (!workspace) return;
-    setInviteLoading(true);
-    try {
-      await api.createMember(workspace.id, {
-        email: inviteEmail,
-        role: inviteRole,
+  useEffect(() => {
+    if (!workspace || !canManageWorkspace) return;
+    let cancelled = false;
+    setDirectoryLoading(true);
+    api
+      .velafiDirectorySearch(workspace.id, searchQuery)
+      .then((resp) => {
+        if (!cancelled) setDirectoryResults(resp.results ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setDirectoryResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDirectoryLoading(false);
       });
-      setInviteEmail("");
-      setInviteRole("member");
-      qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
-      toast.success(t(($) => $.members.toast_invitation_sent));
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace, canManageWorkspace, searchQuery]);
+
+  const visibleResults = useMemo(() => {
+    if (selectedEntry) return [];
+    if (!searchQuery.trim()) return [];
+    return directoryResults;
+  }, [directoryResults, selectedEntry, searchQuery]);
+
+  const handleQuickAddMember = async () => {
+    if (!workspace || !selectedEntry) return;
+    setQuickAddLoading(true);
+    try {
+      const result = await api.velafiQuickAdd(workspace.id, {
+        email: selectedEntry.email,
+        role: selectedRole,
+      });
+      setSearchQuery("");
+      setSelectedEntry(null);
+      setSelectedRole("member");
+      setDirectoryResults([]);
+      qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
+      if (result.is_pending_login) {
+        toast.success(t(($) => $.members.toast_pending_login));
+      } else {
+        toast.success(t(($) => $.members.toast_invitation_sent));
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.members.toast_invitation_failed));
     } finally {
-      setInviteLoading(false);
+      setQuickAddLoading(false);
     }
   };
 
@@ -345,31 +382,77 @@ export function MembersTab() {
                 <Plus className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-medium">{t(($) => $.members.invite_title)}</h3>
               </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]">
-                <Input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder={t(($) => $.members.invite_email_placeholder)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && inviteEmail.trim()) handleInviteMember();
-                  }}
-                />
-                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
-                  <SelectTrigger size="sm">
-                    <SelectValue>{() => roleConfig[inviteRole].label}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">{roleConfig.member.label}</SelectItem>
-                    <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  onClick={handleInviteMember}
-                  disabled={inviteLoading || !inviteEmail.trim()}
-                >
-                  {inviteLoading ? t(($) => $.members.inviting) : t(($) => $.members.invite_button)}
-                </Button>
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setSelectedEntry(null);
+                    }}
+                    placeholder={t(($) => $.members.invite_email_placeholder)}
+                    className="pl-9"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">{t(($) => $.members.search_hint)}</p>
+                {selectedEntry && (
+                  <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                    <div className="font-medium">{t(($) => $.members.selected_member, { name: selectedEntry.name })}</div>
+                    <div className="text-xs text-muted-foreground">{selectedEntry.email}</div>
+                  </div>
+                )}
+                {!selectedEntry && searchQuery.trim() && (
+                  <div className="max-h-60 overflow-y-auto rounded-md border border-border">
+                    {directoryLoading ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">{t(($) => $.members.search_loading)}</div>
+                    ) : visibleResults.length > 0 ? (
+                      visibleResults.map((entry) => (
+                        <button
+                          key={entry.email}
+                          type="button"
+                          className="flex w-full items-start justify-between gap-3 border-b border-border/50 px-3 py-2 text-left last:border-b-0 hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={entry.already_member}
+                          onClick={() => {
+                            setSelectedEntry(entry);
+                            setSearchQuery(entry.name || entry.email);
+                          }}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{entry.name || entry.email}</div>
+                            <div className="truncate text-xs text-muted-foreground">{entry.email}</div>
+                            {entry.job_title && (
+                              <div className="truncate text-xs text-muted-foreground">{entry.job_title}</div>
+                            )}
+                          </div>
+                          {entry.already_member && (
+                            <Badge variant="outline">{t(($) => $.members.already_member)}</Badge>
+                          )}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">{t(($) => $.members.search_empty)}</div>
+                    )}
+                  </div>
+                )}
+                <div className="grid gap-3 sm:grid-cols-[120px_auto]">
+                  <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as MemberRole)}>
+                    <SelectTrigger size="sm">
+                      <SelectValue>{() => roleConfig[selectedRole].label}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">{roleConfig.member.label}</SelectItem>
+                      <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={handleQuickAddMember}
+                    disabled={quickAddLoading || !selectedEntry}
+                  >
+                    {quickAddLoading ? t(($) => $.members.inviting) : t(($) => $.members.invite_button)}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

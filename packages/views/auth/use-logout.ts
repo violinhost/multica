@@ -2,7 +2,8 @@
 
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@multica/core/auth";
+import { useAuthStore, markLogoutInProgress } from "@multica/core/auth";
+import { api } from "@multica/core/api";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { clearWorkspaceStorage, defaultStorage } from "@multica/core/platform";
 import { paths } from "@multica/core/paths";
@@ -27,7 +28,15 @@ export function useLogout() {
   const authLogout = useAuthStore((s) => s.logout);
   const { push } = useNavigation();
 
-  return useCallback(() => {
+  return useCallback(async () => {
+    markLogoutInProgress();
+    try {
+      await api.logout();
+    } catch {
+      // Best effort: even if the server logout request fails, still clear
+      // local client state so the user is not left on a protected route.
+    }
+
     // Clear workspace-scoped storage for every workspace this user has
     // access to, BEFORE clearing the React Query cache (which holds the
     // workspace list). Otherwise per-workspace drafts/chat/etc would leak
@@ -54,10 +63,9 @@ export function useLogout() {
     queryClient.clear();
     authLogout();
 
-    // Navigate to /login explicitly. authLogout() clears state but doesn't
-    // move the URL — without this the caller might be on a workspace URL
-    // which renders null (layout gates on user) and leaves the user
-    // stuck on a blank page.
-    push(paths.login());
+    // Logout should land on a stable logged-out login URL that suppresses
+    // the login page's normal auto-OIDC redirect, otherwise an active upstream
+    // SSO session can bounce the user straight back into the app.
+    push(`${paths.login()}?logged_out=1`);
   }, [queryClient, authLogout, push]);
 }

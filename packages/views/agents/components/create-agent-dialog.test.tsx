@@ -59,6 +59,7 @@ const members: MemberWithUser[] = [
     name: "Me",
     email: "me@example.com",
     avatar_url: null,
+    is_pending_login: false,
     created_at: "2026-01-01T00:00:00Z",
   },
   {
@@ -69,6 +70,7 @@ const members: MemberWithUser[] = [
     name: "Other",
     email: "other@example.com",
     avatar_url: null,
+    is_pending_login: false,
     created_at: "2026-01-01T00:00:00Z",
   },
 ];

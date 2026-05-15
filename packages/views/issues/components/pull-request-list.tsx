@@ -41,8 +41,8 @@ export function PullRequestList({ issueId }: { issueId: string }) {
 
   return (
     <div className="space-y-1">
-      {prs.map((pr) => (
-        <PullRequestRow key={pr.id} pr={pr} />
+                  {prs.map((pr: GitHubPullRequest) => (
+<PullRequestRow key={pr.id} pr={pr} />
       ))}
     </div>
   );

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@multica/core/auth";
+import { useAuthStore, isLogoutInProgress } from "@multica/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
@@ -37,7 +37,11 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (isLoading || !user) {
-      if (!isLoading && !user) router.replace(paths.login());
+      if (!isLoading && !user) {
+        router.replace(
+          isLogoutInProgress() ? `${paths.login()}?logged_out=1` : paths.login(),
+        );
+      }
       return;
     }
     if (!workspacesFetched) return;

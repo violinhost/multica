@@ -4,9 +4,9 @@ import { use, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { WorkspaceSlugProvider, paths } from "@multica/core/paths";
+import { useAuthStore, isLogoutInProgress } from "@multica/core/auth";
 import { workspaceBySlugOptions } from "@multica/core/workspace";
 import { setCurrentWorkspace } from "@multica/core/platform";
-import { useAuthStore } from "@multica/core/auth";
 import { NoAccessPage } from "@multica/views/workspace/no-access-page";
 import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
 import { useWorkspaceSeen } from "@multica/views/workspace/use-workspace-seen";
@@ -28,7 +28,11 @@ export default function WorkspaceLayout({
   // to /login. Without this, the layout renders null and the user sees a
   // blank page stuck on /{slug}/...
   useEffect(() => {
-    if (!isAuthLoading && !user) router.replace(paths.login());
+    if (!isAuthLoading && !user) {
+      router.replace(
+        isLogoutInProgress() ? `${paths.login()}?logged_out=1` : paths.login(),
+      );
+    }
   }, [isAuthLoading, user, router]);
 
   // Resolve workspace by slug from the React Query list cache.

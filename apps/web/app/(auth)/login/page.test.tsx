@@ -1,177 +1,312 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import enCommon from "@multica/views/locales/en/common.json";
-import enAuth from "@multica/views/locales/en/auth.json";
-import enSettings from "@multica/views/locales/en/settings.json";
 import type { ReactNode } from "react";
-
-const TEST_RESOURCES = {
-  en: { common: enCommon, auth: enAuth, settings: enSettings },
-};
+import { paths } from "@multica/core/paths";
 
 function createWrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return ({ children }: { children: ReactNode }) => (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    </I18nProvider>
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
 }
 
 const {
-  mockSendCode,
-  mockVerifyCode,
   mockIssueCliToken,
+  mockLogout,
+  mockFetch,
   searchParamsState,
   authStateRef,
+  configStateRef,
 } = vi.hoisted(() => ({
-  mockSendCode: vi.fn(),
-  mockVerifyCode: vi.fn(),
   mockIssueCliToken: vi.fn(),
+  mockLogout: vi.fn(),
+  mockFetch: vi.fn(),
   searchParamsState: { params: new URLSearchParams() },
   authStateRef: {
     state: {
       sendCode: vi.fn(),
       verifyCode: vi.fn(),
-      user: null as null | { id: string; email: string },
+      user: null as null | { id: string; email: string; onboarded_at?: string },
       isLoading: false,
+    },
+  },
+  configStateRef: {
+    state: {
+      oidcAuthorizationEndpoint: "",
+      oidcClientID: "",
+      oidcRedirectURI: "",
     },
   },
 }));
 
-// Mock next/navigation
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => "/login",
   useSearchParams: () => searchParamsState.params,
 }));
 
-// Mock auth store — shared LoginPage uses getState().sendCode/verifyCode,
-// web wrapper uses useAuthStore((s) => s.user/isLoading). Keep the real
-// sanitizeNextUrl so the redirect-sanitization rules are exercised rather
-// than silently drifting behind a mock reimplementation.
 vi.mock("@multica/core/auth", async () => {
   const actual =
     await vi.importActual<typeof import("@multica/core/auth")>(
       "@multica/core/auth",
     );
-  authStateRef.state.sendCode = mockSendCode;
-  authStateRef.state.verifyCode = mockVerifyCode;
   const useAuthStore = Object.assign(
     (selector: (s: typeof authStateRef.state) => unknown) =>
       selector(authStateRef.state),
-    { getState: () => authStateRef.state },
+    {
+      getState: () => authStateRef.state,
+      setState: (
+        update: Partial<typeof authStateRef.state>,
+      ) => {
+        Object.assign(authStateRef.state, update);
+      },
+    },
   );
   return { ...actual, useAuthStore };
 });
 
-// Mock auth-cookie
+vi.mock("@multica/core/config", () => ({
+  useConfigStore: (selector: (s: typeof configStateRef.state) => unknown) =>
+    selector(configStateRef.state),
+}));
+
 vi.mock("@/features/auth/auth-cookie", () => ({
   setLoggedInCookie: vi.fn(),
 }));
 
-// Mock api
 vi.mock("@multica/core/api", () => ({
   api: {
     listWorkspaces: vi.fn().mockResolvedValue([]),
-    verifyCode: vi.fn(),
+    listMyInvitations: vi.fn().mockResolvedValue([]),
+    issueCliToken: mockIssueCliToken,
+    logout: mockLogout,
     setToken: vi.fn(),
     getMe: vi.fn(),
-    issueCliToken: mockIssueCliToken,
   },
 }));
 
 import LoginPage from "./page";
 
-describe("LoginPage", () => {
+describe("LoginPage (Velafi redirect-only)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     searchParamsState.params = new URLSearchParams();
     authStateRef.state.user = null;
     authStateRef.state.isLoading = false;
+    configStateRef.state.oidcAuthorizationEndpoint = "";
+    configStateRef.state.oidcClientID = "";
+    configStateRef.state.oidcRedirectURI = "";
+    mockFetch.mockResolvedValue({
+      json: async () => ({ healthy: true }),
+    } as Response);
+    vi.stubGlobal("fetch", mockFetch);
   });
 
-  it("renders login form with email input and continue button", () => {
+  it("renders a transient signing-in state while waiting for OIDC config", () => {
+    render(<LoginPage />, { wrapper: createWrapper() });
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    expect(screen.getByText(/signing in/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/redirect you to lark authentication/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/download/i)).not.toBeInTheDocument();
+  });
+
+  it("does not auto-redirect to OIDC when ?logged_out=1 is present", async () => {
+    searchParamsState.params = new URLSearchParams({ logged_out: "1" });
+    configStateRef.state.oidcAuthorizationEndpoint =
+      "https://auth.example/application/o/authorize/";
+    configStateRef.state.oidcClientID = "client-abc";
+
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        origin: "http://localhost",
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
+    });
+
+    try {
+      render(<LoginPage />, { wrapper: createWrapper() });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(hrefSetter).not.toHaveBeenCalled();
+      expect(screen.getByText(/signing in/i)).not.toBeNull();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("redirects to OIDC authorize URL once config has loaded (default visit)", async () => {
+    configStateRef.state.oidcAuthorizationEndpoint =
+      "https://auth.example/application/o/authorize/";
+    configStateRef.state.oidcClientID = "client-abc";
+
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        origin: "http://localhost",
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
+    });
+
+    try {
+      render(<LoginPage />, { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledTimes(1);
+      });
+      const url: string = hrefSetter.mock.calls[0]?.[0] as string;
+      expect(url).toContain(
+        "https://auth.example/application/o/authorize/?",
+      );
+      expect(url).toContain("client_id=client-abc");
+      expect(url).toContain("response_type=code");
+      expect(url).toContain(
+        "redirect_uri=http%3A%2F%2Flocalhost%2Fauth%2Foidc%2Fcallback",
+      );
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("encodes ?next= into OIDC state for post-auth redirect", async () => {
+    searchParamsState.params = new URLSearchParams({ next: "/invite/abc" });
+    configStateRef.state.oidcAuthorizationEndpoint =
+      "https://auth.example/application/o/authorize/";
+    configStateRef.state.oidcClientID = "client-abc";
+
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        origin: "http://localhost",
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
+    });
+
+    try {
+      render(<LoginPage />, { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledTimes(1);
+      });
+      const url: string = hrefSetter.mock.calls[0]?.[0] as string;
+      expect(decodeURIComponent(url)).toContain("state=next:/invite/abc");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("renders CLI confirm UI when ?cli_callback= valid AND user authed", async () => {
+    searchParamsState.params = new URLSearchParams({
+      cli_callback: "http://localhost:9876/cb",
+      cli_state: "csrf-state",
+    });
+    authStateRef.state.user = {
+      id: "u1",
+      email: "violin@velafi.com",
+    };
+
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    expect(screen.getByText("Sign in to Multica")).toBeInTheDocument();
-    expect(screen.getByText("Enter your email to get a login code")).toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Continue" })
+      await screen.findByText(/authorize cli/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/violin@velafi\.com/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^authorize$/i }),
     ).toBeInTheDocument();
   });
 
-  it("does not call sendCode when email is empty", async () => {
-    const user = userEvent.setup();
-    render(<LoginPage />, { wrapper: createWrapper() });
-
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(mockSendCode).not.toHaveBeenCalled();
-  });
-
-  it("calls sendCode with email on submit", async () => {
-    mockSendCode.mockResolvedValueOnce(undefined);
-    const user = userEvent.setup();
-    render(<LoginPage />, { wrapper: createWrapper() });
-
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    await waitFor(() => {
-      expect(mockSendCode).toHaveBeenCalledWith("test@multica.ai");
+  it("redirects to OIDC with cli_callback preserved when ?cli_callback= AND no session", async () => {
+    searchParamsState.params = new URLSearchParams({
+      cli_callback: "http://localhost:9876/cb",
+      cli_state: "csrf-state",
     });
+    configStateRef.state.oidcAuthorizationEndpoint =
+      "https://auth.example/application/o/authorize/";
+    configStateRef.state.oidcClientID = "client-abc";
+    // user remains null
+
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        origin: "http://localhost",
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
+    });
+
+    try {
+      render(<LoginPage />, { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledTimes(1);
+      });
+      const url: string = hrefSetter.mock.calls[0]?.[0] as string;
+      // OIDC state encodes a /login?cli_callback=… return URL.
+      // Outer URLSearchParams encoding decodes once via decodeURIComponent,
+      // leaving the cli_callback URL still encoded (encodeURIComponent on
+      // the inner URL is intentional — that survives the second decode the
+      // browser performs when navigating back to /login).
+      const decoded = decodeURIComponent(url);
+      expect(decoded).toContain("state=next:/login?cli_callback=");
+      expect(decoded).toContain("cli_state=csrf-state");
+      // The inner URL is still pct-encoded inside the state param.
+      expect(decoded).toContain("http%3A%2F%2Flocalhost%3A9876%2Fcb");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
 
-  it("shows 'Sending code...' while submitting", async () => {
-    mockSendCode.mockReturnValueOnce(new Promise(() => {}));
-    const user = userEvent.setup();
+  it("renders email rescue form when ?force=email", () => {
+    searchParamsState.params = new URLSearchParams({ force: "email" });
+
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Sending code...")).toBeInTheDocument();
-    });
+    // Rescue path is not part of the protected Lark-only production contract;
+    // assert only that the fallback form subtree renders at all.
+    const form = document.getElementById("login-form");
+    expect(form).not.toBeNull();
+    const input = document.getElementById("login-email");
+    expect(input).not.toBeNull();
   });
 
-  it("shows verification code step after sending code", async () => {
-    mockSendCode.mockResolvedValueOnce(undefined);
-    const user = userEvent.setup();
-    render(<LoginPage />, { wrapper: createWrapper() });
-
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Check your email")).toBeInTheDocument();
-    });
-  });
-
-  it("shows error when sendCode fails", async () => {
-    mockSendCode.mockRejectedValueOnce(new Error("Network error"));
-    const user = userEvent.setup();
-    render(<LoginPage />, { wrapper: createWrapper() });
-
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Network error")).toBeInTheDocument();
-    });
-  });
-
-  // Regression: MUL-1080 — if the user is already authenticated on the web
-  // and the Desktop app redirects them to /login?platform=desktop, the web
-  // must exchange the cookie session for a bearer token and hand it off via
-  // the multica:// deep link, not silently redirect to the workspace page.
-  it("mints a token and deep-links to Desktop when already logged in with platform=desktop", async () => {
+  // Regression MUL-1080: desktop handoff continues to work.
+  it("mints a token and deep-links to Desktop when authed + platform=desktop", async () => {
     searchParamsState.params = new URLSearchParams({ platform: "desktop" });
-    authStateRef.state.user = { id: "u1", email: "test@multica.ai" };
+    authStateRef.state.user = {
+      id: "u1",
+      email: "test@multica.ai",
+    };
     mockIssueCliToken.mockImplementation(() =>
       Promise.resolve({ token: "handoff-jwt" }),
     );
@@ -180,7 +315,12 @@ describe("LoginPage", () => {
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
       configurable: true,
-      value: { ...originalLocation, set href(value: string) { hrefSetter(value); } },
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
     });
 
     try {

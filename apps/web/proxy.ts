@@ -75,11 +75,17 @@ export function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // --- Root path: redirect logged-in users to their last workspace ---
-  if (pathname === "/" && hasSession && lastSlug) {
+  // --- Root path: login-first contract for unauthenticated users ---
+  if (pathname === "/") {
     const url = req.nextUrl.clone();
-    url.pathname = `/${lastSlug}/issues`;
-    return NextResponse.redirect(url);
+    if (hasSession && lastSlug) {
+      url.pathname = `/${lastSlug}/issues`;
+      return NextResponse.redirect(url);
+    }
+    if (!hasSession) {
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
   }
 
   // --- Default: forward locale header to RSC, no redirect/rewrite ---

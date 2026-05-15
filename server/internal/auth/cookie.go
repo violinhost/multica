@@ -62,6 +62,21 @@ func isSecureCookie() bool {
 	return strings.EqualFold(u.Scheme, "https")
 }
 
+// authCookieSameSite returns the SameSite policy for auth/session cookies.
+//
+// We intentionally use Lax instead of Strict for the self-hosted web app's
+// auth and CSRF cookies because OIDC login is a top-level cross-site redirect
+// flow: the browser leaves Multica for the identity provider, then returns to
+// Multica's callback URL with a code. In embedded webviews (notably Lark /
+// Feishu OSS containers) Strict cookies are prone to being withheld on the
+// callback navigation or on the immediate follow-up navigation, which makes the
+// login appear flaky even when the token exchange succeeded. Lax preserves CSRF
+// protection for subresource and most cross-site POST contexts while allowing
+// the top-level GET callback / redirect chain that OIDC depends on.
+func authCookieSameSite() http.SameSite {
+	return http.SameSiteLaxMode
+}
+
 // generateCSRFToken creates a CSRF token bound to the auth token via HMAC.
 // Format: hex(nonce) + "." + hex(HMAC-SHA256(nonce, authToken)).
 // This ensures an attacker who can write cookies on a subdomain cannot forge
@@ -84,6 +99,7 @@ func generateCSRFToken(authToken string) (string, error) {
 func SetAuthCookies(w http.ResponseWriter, token string) error {
 	secure := isSecureCookie()
 	domain := cookieDomain()
+	sameSite := authCookieSameSite()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     AuthCookieName,
@@ -94,7 +110,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 		Expires:  time.Now().Add(30 * 24 * time.Hour),
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: sameSite,
 	})
 
 	csrfToken, err := generateCSRFToken(token)
@@ -111,7 +127,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 		Expires:  time.Now().Add(30 * 24 * time.Hour),
 		HttpOnly: false,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: sameSite,
 	})
 
 	return nil
@@ -121,6 +137,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 func ClearAuthCookies(w http.ResponseWriter) {
 	domain := cookieDomain()
 	secure := isSecureCookie()
+	sameSite := authCookieSameSite()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     AuthCookieName,
@@ -131,7 +148,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: sameSite,
 	})
 
 	http.SetCookie(w, &http.Cookie{
@@ -143,7 +160,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 		Expires:  time.Unix(0, 0),
 		HttpOnly: false,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: sameSite,
 	})
 }
 

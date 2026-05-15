@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@multica/core/auth";
+import { useAuthStore, isLogoutInProgress } from "@multica/core/auth";
 import { paths } from "@multica/core/paths";
 import { workspaceListOptions } from "@multica/core/workspace/queries";
 import { NewWorkspacePage } from "@multica/views/workspace/new-workspace-page";
@@ -18,7 +18,11 @@ export default function Page() {
   });
 
   useEffect(() => {
-    if (!isLoading && !user) router.replace(paths.login());
+    if (!isLoading && !user) {
+      router.replace(
+        isLogoutInProgress() ? `${paths.login()}?logged_out=1` : paths.login(),
+      );
+    }
   }, [isLoading, user, router]);
 
   if (isLoading || !user) return null;

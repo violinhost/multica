@@ -5,14 +5,14 @@ import { paths } from "@multica/core/paths";
 const {
   mockPush,
   mockSearchParams,
-  mockLoginWithGoogle,
+  mockLoginWithOIDC,
   mockListWorkspaces,
   mockListMyInvitations,
   mockSetQueryData,
 } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockSearchParams: new URLSearchParams(),
-  mockLoginWithGoogle: vi.fn(),
+  mockLoginWithOIDC: vi.fn(),
   mockListWorkspaces: vi.fn(),
   mockListMyInvitations: vi.fn(),
   mockSetQueryData: vi.fn(),
@@ -31,7 +31,7 @@ const makeUser = (overrides: Partial<{ onboarded_at: string | null }> = {}) => (
 });
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: mockPush }),
   useSearchParams: () => mockSearchParams,
 }));
 
@@ -48,15 +48,15 @@ vi.mock("@multica/core/auth", async () => {
     );
   return {
     ...actual,
+    useHasOnboarded: () => false,
     useAuthStore: (selector: (s: unknown) => unknown) =>
-      selector({ loginWithGoogle: mockLoginWithGoogle }),
+      selector({ loginWithOIDC: mockLoginWithOIDC }),
   };
 });
 
 vi.mock("@multica/core/workspace/queries", () => ({
   workspaceKeys: {
     list: () => ["workspaces"],
-    myInvitations: () => ["invitations", "mine"],
   },
 }));
 
@@ -64,7 +64,8 @@ vi.mock("@multica/core/api", () => ({
   api: {
     listWorkspaces: mockListWorkspaces,
     listMyInvitations: mockListMyInvitations,
-    googleLogin: vi.fn(),
+    oidcLogin: vi.fn(),
+    getMe: vi.fn(),
   },
 }));
 
@@ -79,7 +80,7 @@ describe("CallbackPage", () => {
       mockSearchParams.delete(k),
     );
     mockSearchParams.set("code", "test-code");
-    mockLoginWithGoogle.mockResolvedValue(makeUser());
+    mockLoginWithOIDC.mockResolvedValue(makeUser());
     mockListWorkspaces.mockResolvedValue([]);
     mockListMyInvitations.mockResolvedValue([]);
   });
@@ -103,7 +104,7 @@ describe("CallbackPage", () => {
     expect(mockListMyInvitations).toHaveBeenCalled();
   });
 
-  it("unonboarded user with pending invitations lands on /invitations", async () => {
+  it("unonboarded user with pending invitations still lands on /onboarding unless an explicit invite deep-link was requested", async () => {
     mockListMyInvitations.mockResolvedValue([
       {
         id: "inv-1",
@@ -115,13 +116,13 @@ describe("CallbackPage", () => {
     ]);
     render(<CallbackPage />);
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.invitations());
+      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
     });
-    expect(mockPush).not.toHaveBeenCalledWith(paths.onboarding());
+    expect(mockPush).not.toHaveBeenCalledWith(paths.invitations());
   });
 
   it("onboarded user with workspace lands in that workspace", async () => {
-    mockLoginWithGoogle.mockResolvedValue(
+    mockLoginWithOIDC.mockResolvedValue(
       makeUser({ onboarded_at: "2026-01-01T00:00:00Z" }),
     );
     mockListWorkspaces.mockResolvedValue([
@@ -148,7 +149,7 @@ describe("CallbackPage", () => {
   });
 
   it("onboarded user ignores unsafe next= targets and lands on the default destination", async () => {
-    mockLoginWithGoogle.mockResolvedValue(
+    mockLoginWithOIDC.mockResolvedValue(
       makeUser({ onboarded_at: "2026-01-01T00:00:00Z" }),
     );
     mockSearchParams.set("state", "next:https://evil.example");
@@ -162,7 +163,7 @@ describe("CallbackPage", () => {
   });
 
   it("onboarded user honors a safe next= target (e.g. /invite/{id})", async () => {
-    mockLoginWithGoogle.mockResolvedValue(
+    mockLoginWithOIDC.mockResolvedValue(
       makeUser({ onboarded_at: "2026-01-01T00:00:00Z" }),
     );
     mockSearchParams.set("state", "next:/invite/abc123");

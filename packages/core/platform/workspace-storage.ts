@@ -46,7 +46,7 @@ export function setCurrentWorkspace(slug: string | null, wsId: string | null) {
     queueMicrotask(() => {
       _pendingNotify = false;
       const current = _currentSlug;
-      for (const fn of _slugSubscribers) {
+      for (const fn of Array.from(_slugSubscribers)) {
         fn(current);
       }
     });

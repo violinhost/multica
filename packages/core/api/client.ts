@@ -93,6 +93,9 @@ import type {
   GitHubConnectResponse,
   Squad,
   SquadMember,
+  VelafiQuickAddRequest,
+  VelafiQuickAddResponse,
+  VelafiDirectorySearchResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import { type Logger, noopLogger } from "../logger";
@@ -372,6 +375,17 @@ export class ApiClient {
 
   async googleLogin(code: string, redirectUri: string): Promise<LoginResponse> {
     return this.fetch("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ code, redirect_uri: redirectUri }),
+    });
+  }
+
+  // Velafi fork: OIDC login via Authentik. Backend POST /auth/oidc exchanges
+  // the Authentik authorization code for a Multica session JWT. See
+  // server/internal/handler/auth_oidc.go for the receiving end and
+  // packages/core/auth/store.ts loginWithOIDC for the caller.
+  async oidcLogin(code: string, redirectUri: string): Promise<LoginResponse> {
+    return this.fetch("/auth/oidc", {
       method: "POST",
       body: JSON.stringify({ code, redirect_uri: redirectUri }),
     });
@@ -1015,10 +1029,18 @@ export class ApiClient {
   }
 
   // App Config
+  // Velafi fork: replaces google_client_id with OIDC config fields exposed by
+  // server/internal/handler/config.go. The frontend reads these to build the
+  // OIDC authorize URL and end-session URL for Lark/Authentik SSO.
   async getConfig(): Promise<{
     cdn_domain: string;
     allow_signup: boolean;
-    google_client_id?: string;
+    oidc_issuer_url?: string;
+    oidc_client_id?: string;
+    oidc_authorization_endpoint?: string;
+    oidc_end_session_endpoint?: string;
+    oidc_redirect_uri?: string;
+    auth_callback_path?: string;
     posthog_key?: string;
     posthog_host?: string;
     analytics_environment?: string;
@@ -1059,6 +1081,28 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  // Velafi fork: direct-add member by email. Backend creates user row + member
+  // row in one call (is_pending_login=true) which will be linked on first OIDC
+  // login. Avoids the email-invite roundtrip for org-internal users already
+  // discoverable via the Lark directory.
+  async velafiQuickAdd(workspaceId: string, data: VelafiQuickAddRequest): Promise<VelafiQuickAddResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/velafi/quick-add`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Velafi fork: search the embedded Lark roster for autocomplete in the
+  // velafi-quick-add UI. q can be empty to fetch all (capped at 100).
+  // workspace_id is optional — when given, results are annotated with
+  // already_member so the UI can grey out existing members.
+  async velafiDirectorySearch(workspaceId: string, q: string): Promise<VelafiDirectorySearchResponse> {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (workspaceId) params.set("workspace_id", workspaceId);
+    return this.fetch(`/api/workspaces/${workspaceId}/velafi/directory/search?${params}`);
   }
 
   async updateMember(workspaceId: string, memberId: string, data: UpdateMemberRequest): Promise<MemberWithUser> {

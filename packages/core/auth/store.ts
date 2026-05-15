@@ -21,6 +21,7 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
+  loginWithOIDC: (code: string, redirectUri: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -92,7 +93,21 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     loginWithGoogle: async (code: string, redirectUri: string) => {
-      const { token, user } = await api.googleLogin(code, redirectUri);
+      // Legacy compatibility shim: this fork's auth callback route historically
+      // used the Google-named method, but the runtime login surface is now OIDC.
+      const { token, user } = await api.oidcLogin(code, redirectUri);
+      if (!cookieAuth) {
+        storage.setItem("multica_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user });
+      return user;
+    },
+
+    loginWithOIDC: async (code: string, redirectUri: string) => {
+      const { token, user } = await api.oidcLogin(code, redirectUri);
       if (!cookieAuth) {
         storage.setItem("multica_token", token);
         api.setToken(token);
@@ -114,10 +129,6 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: () => {
-      if (cookieAuth) {
-        // Clear server-side HttpOnly cookie.
-        api.logout().catch(() => {});
-      }
       storage.removeItem("multica_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);

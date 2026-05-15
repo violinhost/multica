@@ -1,6 +1,11 @@
-export { createAuthStore } from "./store";
-export type { AuthStoreOptions, AuthState } from "./store";
+export { createAuthStore, type AuthStoreOptions, type AuthState } from "./store";
 export { sanitizeNextUrl } from "./utils";
+export {
+  LOGOUT_IN_PROGRESS_KEY,
+  clearLogoutInProgress,
+  isLogoutInProgress,
+  markLogoutInProgress,
+} from "./logout-marker";
 
 import type { createAuthStore as CreateAuthStoreFn } from "./store";
 

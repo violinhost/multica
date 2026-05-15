@@ -52,7 +52,11 @@ export function AuthInitializer({
         if (cfg.cdn_domain) configStore.getState().setCdnDomain(cfg.cdn_domain);
         configStore.getState().setAuthConfig({
           allowSignup: cfg.allow_signup,
-          googleClientId: cfg.google_client_id,
+          oidcIssuerURL: cfg.oidc_issuer_url,
+          oidcClientID: cfg.oidc_client_id,
+          oidcAuthorizationEndpoint: cfg.oidc_authorization_endpoint,
+          oidcEndSessionEndpoint: cfg.oidc_end_session_endpoint,
+          oidcRedirectURI: cfg.oidc_redirect_uri,
         });
         if (cfg.posthog_key) {
           initAnalytics({

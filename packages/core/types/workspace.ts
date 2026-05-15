@@ -64,6 +64,7 @@ export interface MemberWithUser {
   name: string;
   email: string;
   avatar_url: string | null;
+  is_pending_login: boolean;
 }
 
 export interface Invitation {
