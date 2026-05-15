@@ -6,27 +6,27 @@ import { useAuthStore, markLogoutInProgress } from "@multica/core/auth";
 import { api } from "@multica/core/api";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { clearWorkspaceStorage, defaultStorage } from "@multica/core/platform";
-import { paths } from "@multica/core/paths";
 import type { Workspace } from "@multica/core/types";
-import { useNavigation } from "../navigation";
 
 /**
  * Performs a complete logout: clears per-workspace client storage, legacy
  * cookies, the desktop tab state, the entire React Query cache, the
- * in-memory auth store, and finally navigates to /login. Wraps what was
- * previously duplicated in app-sidebar's logout handler so NoAccessPage's
- * "Sign in as a different user" and any future entry point can use the
- * same flow.
+ * in-memory auth store, and finally navigates to the Authentik invalidation
+ * flow which kills the authentik_session cookie before redirecting back to
+ * Multica's login. Without killing the upstream Authentik session, the next
+ * login attempt fails with `FlowNonApplicableException` because Authentik
+ * sees the user already authenticated as the same user the source returns
+ * (incident reproduced 2026-05-15 second-login-cycle: Permission denied /
+ * Flow does not apply to current user).
  *
- * Without a unified logout, callers that only do `navigate('/login')`
- * leave the auth cookie + React Query cache + local storage intact —
- * AuthInitializer then silently re-authenticates the user on the login
- * page and redirects them back where they came from.
+ * The Authentik default-invalidation-flow runs:
+ *   [0] UserLogoutStage (clears authentik_session, no UI)
+ *   [10] velafi-invalidation-redirect (RedirectStage → https://multica.velafi.ai/)
+ * which then lands on /login, where useEffect picks up the OIDC redirect.
  */
 export function useLogout() {
   const queryClient = useQueryClient();
   const authLogout = useAuthStore((s) => s.logout);
-  const { push } = useNavigation();
 
   return useCallback(async () => {
     markLogoutInProgress();
@@ -63,9 +63,15 @@ export function useLogout() {
     queryClient.clear();
     authLogout();
 
-    // Logout should land on a stable logged-out login URL that suppresses
-    // the login page's normal auto-OIDC redirect, otherwise an active upstream
-    // SSO session can bounce the user straight back into the app.
-    push(`${paths.login()}?logged_out=1`);
-  }, [queryClient, authLogout, push]);
+    // Velafi (2026-05-15): hard navigation to Authentik invalidation flow.
+    // This kills the authentik_session cookie BEFORE we land back on /login,
+    // so the next OIDC authorize call sees no Authentik session and forces
+    // a fresh source authentication (no FlowNonApplicableException).
+    // Authentik's velafi-invalidation-redirect lands us back at
+    // https://multica.velafi.ai/ which then 307s to /login, where useEffect
+    // auto-redirects to OIDC.
+    if (typeof window !== "undefined") {
+      window.location.href = "/idp/if/flow/default-invalidation-flow/";
+    }
+  }, [queryClient, authLogout]);
 }
