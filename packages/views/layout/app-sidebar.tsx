@@ -77,7 +77,7 @@ import { useDeletePin, useReorderPins } from "@multica/core/pins/mutations";
 import { issueDetailOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import type { PinnedItem } from "@multica/core/types";
-import { useLogout } from "../auth";
+import { useLogout, useIsLarkEmbed } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useT } from "../i18n";
 
@@ -345,6 +345,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const user = useAuthStore((s) => s.user);
   const userId = useAuthStore((s) => s.user?.id);
   const logout = useLogout();
+  // Velafi (2026-05-15 restored): hide Logout in Lark webview embed.
+  // Logout inside Lark embed jumps to Authentik invalidation flow in the
+  // same webview → user stuck on blank Authentik sign-in page. Closing
+  // Lark or signing out of Lark is the right path. See is-lark-embed.ts.
+  const isInLark = useIsLarkEmbed();
   const workspace = useCurrentWorkspace();
   const p = useWorkspacePaths();
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
@@ -571,13 +576,17 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       </DropdownMenuGroup>
                     </>
                   )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem variant="destructive" onClick={logout}>
-                      <LogOut className="h-3.5 w-3.5" />
-                      {t(($) => $.sidebar.log_out)}
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
+                  {!isInLark && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem variant="destructive" onClick={logout}>
+                          <LogOut className="h-3.5 w-3.5" />
+                          {t(($) => $.sidebar.log_out)}
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </SidebarMenuItem>
