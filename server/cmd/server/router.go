@@ -102,9 +102,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	cfSigner := auth.NewCloudFrontSignerFromEnv()
 
 	signupConfig := handler.Config{
-		AllowSignup:         os.Getenv("ALLOW_SIGNUP") != "false",
-		AllowedEmails:       splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
-		AllowedEmailDomains: splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
+		AllowSignup:                   os.Getenv("ALLOW_SIGNUP") != "false",
+		AllowedEmails:                 splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
+		AllowedEmailDomains:           splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
+		UseDailyRollupForRuntimeUsage: os.Getenv("USAGE_DAILY_ROLLUP_ENABLED") == "true",
+		UseDailyRollupForDashboard:    os.Getenv("USAGE_DASHBOARD_ROLLUP_ENABLED") == "true",
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
 	if opts.DaemonWakeup != nil {
@@ -206,13 +208,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Auth (public)
 	r.Post("/auth/send-code", h.SendCode)
 	r.Post("/auth/verify-code", h.VerifyCode)
+	r.Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/oidc", h.OIDCLogin)
 	r.Get("/api/oidc/health", h.OIDCHealth)
-	r.Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/logout", h.Logout)
 
 	// Public API
 	r.Get("/api/config", h.GetConfig)
+
+	// GitHub App webhook (no Multica auth — requests are authenticated via
+	// HMAC-SHA256 signature in the handler) and post-install setup callback.
+	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
+	r.Get("/api/github/setup", h.GitHubSetupCallback)
 
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
@@ -241,6 +248,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{taskId}/messages", h.ListTaskMessages)
 
 		r.Get("/issues/{issueId}/gc-check", h.GetIssueGCCheck)
+		r.Get("/chat-sessions/{sessionId}/gc-check", h.GetChatSessionGCCheck)
+		r.Get("/autopilot-runs/{runId}/gc-check", h.GetAutopilotRunGCCheck)
+		r.Get("/tasks/{taskId}/gc-check", h.GetTaskGCCheck)
 
 		r.Post("/runtimes/{runtimeId}/recover-orphans", h.RecoverOrphanedTasks)
 		r.Post("/tasks/{taskId}/session", h.PinTaskSession)
@@ -291,6 +301,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 				// Owner-only access
 				r.With(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner")).Delete("/", h.DeleteWorkspace)
+
+				// GitHub integration — admin-only operations live here so the
+				// nesting matches the rest of /api/workspaces/{id}/* routes.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Get("/github/connect", h.GitHubConnect)
+					r.Get("/github/installations", h.ListGitHubInstallations)
+					r.Delete("/github/installations/{installationId}", h.DeleteGitHubInstallation)
+				})
 			})
 		})
 
@@ -344,6 +363,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/labels", h.ListLabelsForIssue)
 					r.Post("/labels", h.AttachLabel)
 					r.Delete("/labels/{labelId}", h.DetachLabel)
+					r.Get("/pull-requests", h.ListPullRequestsForIssue)
 				})
 			})
 
@@ -375,6 +395,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
 				})
 			})
+
+			// Squads
+			r.Route("/api/squads", func(r chi.Router) {
+				r.Get("/", h.ListSquads)
+				r.Post("/", h.CreateSquad)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetSquad)
+					r.Put("/", h.UpdateSquad)
+					r.Delete("/", h.DeleteSquad)
+					r.Get("/members", h.ListSquadMembers)
+					r.Post("/members", h.AddSquadMember)
+					r.Delete("/members", h.RemoveSquadMember)
+					r.Patch("/members/role", h.UpdateSquadMemberRole)
+				})
+			})
+
+			// Squad leader evaluation (writes to activity_log)
+			r.Post("/api/issues/{id}/squad-evaluated", h.RecordSquadLeaderEvaluation)
 
 			// Autopilots
 			r.Route("/api/autopilots", func(r chi.Router) {
@@ -411,6 +449,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Route("/api/comments/{commentId}", func(r chi.Router) {
 				r.Put("/", h.UpdateComment)
 				r.Delete("/", h.DeleteComment)
+				r.Post("/resolve", h.ResolveComment)
+				r.Delete("/resolve", h.UnresolveComment)
 				r.Post("/reactions", h.AddReaction)
 				r.Delete("/reactions", h.RemoveReaction)
 			})
@@ -419,6 +459,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Route("/api/agents", func(r chi.Router) {
 				r.Get("/", h.ListAgents)
 				r.Post("/", h.CreateAgent)
+				// Agent templates: pre-configured instructions + skill refs.
+				// Picking a template imports the referenced skills into the
+				// workspace (find-or-create by name) and creates the agent
+				// with the template's instructions in one transaction.
+				r.Post("/from-template", h.CreateAgentFromTemplate)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetAgent)
 					r.Put("/", h.UpdateAgent)
@@ -429,6 +474,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/skills", h.ListAgentSkills)
 					r.Put("/skills", h.SetAgentSkills)
 				})
+			})
+
+			// Agent templates catalog (browse + detail). The Create flow
+			// lives under /api/agents/from-template above; this route is for
+			// the picker UI to list available templates.
+			r.Route("/api/agent-templates", func(r chi.Router) {
+				r.Get("/", h.ListAgentTemplates)
+				r.Get("/{slug}", h.GetAgentTemplate)
 			})
 
 			// Skills
@@ -452,10 +505,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/summary", h.GetWorkspaceUsageSummary)
 			})
 
+			// Dashboard — workspace-wide token + run-time rollups for the
+			// "/{slug}/dashboard" page. Optional ?project_id filter scopes
+			// the rollup to a single project.
+			r.Route("/api/dashboard", func(r chi.Router) {
+				r.Get("/usage/daily", h.GetDashboardUsageDaily)
+				r.Get("/usage/by-agent", h.GetDashboardUsageByAgent)
+				r.Get("/agent-runtime", h.GetDashboardAgentRunTime)
+			})
+
 			// Runtimes
 			r.Route("/api/runtimes", func(r chi.Router) {
 				r.Get("/", h.ListAgentRuntimes)
 				r.Route("/{runtimeId}", func(r chi.Router) {
+					r.Patch("/", h.UpdateAgentRuntime)
 					r.Get("/usage", h.GetRuntimeUsage)
 					r.Get("/usage/by-agent", h.GetRuntimeUsageByAgent)
 					r.Get("/usage/by-hour", h.GetRuntimeUsageByHour)
@@ -492,6 +555,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/", h.ListChatSessions)
 				r.Route("/{sessionId}", func(r chi.Router) {
 					r.Get("/", h.GetChatSession)
+					r.Patch("/", h.UpdateChatSession)
 					r.Delete("/", h.DeleteChatSession)
 					r.Post("/messages", h.SendChatMessage)
 					r.Get("/messages", h.ListChatMessages)
@@ -580,12 +644,14 @@ func parseUUID(s string) pgtype.UUID {
 	return util.MustParseUUID(s)
 }
 
-// optionalUUID mirrors parseUUID for event payloads whose actor_id may be
-// absent. Empty string becomes SQL NULL; non-empty values are treated as
-// internal UUID round-trips and must parse successfully.
+// optionalUUID returns a NULL pgtype.UUID for an empty string and otherwise
+// behaves like parseUUID. Use this for actor IDs on events where the producer
+// may legitimately be a "system" actor with no member/agent attribution
+// (e.g. GitHub webhook auto-status sync) — the activity_log and inbox_item
+// tables both allow actor_id to be NULL.
 func optionalUUID(s string) pgtype.UUID {
-	if strings.TrimSpace(s) == "" {
-		return pgtype.UUID{Valid: false}
+	if s == "" {
+		return pgtype.UUID{}
 	}
 	return util.MustParseUUID(s)
 }
