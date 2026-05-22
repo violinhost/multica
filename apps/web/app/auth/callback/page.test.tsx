@@ -96,15 +96,23 @@ describe("CallbackPage", () => {
     expect(mockListMyInvitations).not.toHaveBeenCalled();
   });
 
-  it("unonboarded user with no next= and no pending invitations lands on /onboarding", async () => {
+  // Velafi (2026-04-25 force-skip-onboarding): unonboarded users land on
+  // /workspaces/new (or first workspace), NEVER /onboarding. fork-pack-A red
+  // line — see packages/core/paths/resolve.ts ("intentionally excluded from
+  // the normal browser") + server/internal/handler/auth_oidc.go MarkUserOnboarded.
+  // The onboarding questionnaire is upstream lead-gen UX, not relevant to self-host.
+  it("unonboarded user with no next= and no pending invitations lands on /workspaces/new", async () => {
     render(<CallbackPage />);
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
+      expect(mockPush).toHaveBeenCalledWith(paths.newWorkspace());
     });
-    expect(mockListMyInvitations).toHaveBeenCalled();
+    // Velafi (2026-04-25 force-skip-onboarding): unonboarded + 0 workspaces
+    // shortcuts to /workspaces/new without consulting listMyInvitations.
+    // Upstream's flow checked pending invitations before falling through to
+    // /onboarding; fork's resolvePostAuthDestination skips that path entirely.
   });
 
-  it("unonboarded user with pending invitations still lands on /onboarding unless an explicit invite deep-link was requested", async () => {
+  it("unonboarded user with pending invitations still lands on /workspaces/new (force-skip-onboarding)", async () => {
     mockListMyInvitations.mockResolvedValue([
       {
         id: "inv-1",
@@ -116,7 +124,7 @@ describe("CallbackPage", () => {
     ]);
     render(<CallbackPage />);
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
+      expect(mockPush).toHaveBeenCalledWith(paths.newWorkspace());
     });
     expect(mockPush).not.toHaveBeenCalledWith(paths.invitations());
   });
@@ -175,11 +183,11 @@ describe("CallbackPage", () => {
     });
   });
 
-  it("falls through to /onboarding when listMyInvitations errors", async () => {
+  it("falls through to /workspaces/new when listMyInvitations errors (force-skip-onboarding)", async () => {
     mockListMyInvitations.mockRejectedValue(new Error("network"));
     render(<CallbackPage />);
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
+      expect(mockPush).toHaveBeenCalledWith(paths.newWorkspace());
     });
   });
 });

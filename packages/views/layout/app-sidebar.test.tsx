@@ -67,7 +67,12 @@ vi.mock("@multica/ui/components/ui/tooltip", () => ({
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
 }));
 vi.mock("./help-launcher", () => ({ HelpLauncher: () => null }));
-vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
+// Velafi (2026-05-15): useIsLarkEmbed export — Lark webview UA detection
+// hides Logout button when embedded. Test env is non-Lark so returns false.
+vi.mock("../auth", () => ({
+  useLogout: () => vi.fn(),
+  useIsLarkEmbed: () => false,
+}));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
   AppLink: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
