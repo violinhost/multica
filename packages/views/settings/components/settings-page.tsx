@@ -11,6 +11,7 @@ import {
   Bell,
   Plug,
 } from "lucide-react";
+import { GitHubMark } from "./github-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@multica/ui/components/ui/tabs";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { useNavigation } from "../../navigation";
@@ -20,6 +21,7 @@ import { TokensTab } from "./tokens-tab";
 import { WorkspaceTab } from "./workspace-tab";
 import { MembersTab } from "./members-tab";
 import { RepositoriesTab } from "./repositories-tab";
+import { GitHubTab } from "./github-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { NotificationsTab } from "./notifications-tab";
 import { useT } from "../../i18n";
@@ -34,16 +36,26 @@ const ACCOUNT_TAB_ICONS = {
 
 // Velafi (2026-05-15): Labs tab removed — only had Co-authored-by Git trailer
 // toggle, which Velafi doesn't use. fork-pack-A markers enforce absence.
-const WORKSPACE_TAB_KEYS = ["general", "repositories", "integrations", "members"] as const;
+// Velafi (2026-05-21 v0.3.5 merge): GitHub tab added upstream (MUL-2414),
+// preserved on merge.
+const WORKSPACE_TAB_KEYS = [
+  "general",
+  "repositories",
+  "github",
+  "integrations",
+  "members",
+] as const;
 const WORKSPACE_TAB_VALUES = {
   general: "workspace",
   repositories: "repositories",
+  github: "github",
   integrations: "integrations",
   members: "members",
 } as const;
 const WORKSPACE_TAB_ICONS = {
   general: Settings,
   repositories: FolderGit2,
+  github: GitHubMark,
   integrations: Plug,
   members: Users,
 } as const;
@@ -149,6 +161,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
           <TabsContent value="tokens"><TokensTab /></TabsContent>
           <TabsContent value="workspace"><WorkspaceTab /></TabsContent>
           <TabsContent value="repositories"><RepositoriesTab /></TabsContent>
+          <TabsContent value="github"><GitHubTab /></TabsContent>
           <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
           <TabsContent value="members"><MembersTab /></TabsContent>
           {extraAccountTabs?.map((tab) => (
