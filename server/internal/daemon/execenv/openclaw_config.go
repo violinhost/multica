@@ -324,9 +324,16 @@ func isOpenclawKeyMissing(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "No value at ") ||
-		strings.Contains(msg, "not set") ||
-		strings.Contains(msg, "missing key") ||
-		strings.Contains(msg, "Path not found")
+	// OpenClaw 5.x (e.g. 2026.5.12) emits "Config path not found: <key>." for
+	// missing keys; older versions used "Path not found" with a leading uppercase
+	// P. strings.Contains is case-sensitive, so the old matcher missed the new
+	// format and fail-closed even though the key was simply unset. Lowercase the
+	// haystack and match on lowercase needles to cover both formats and any
+	// future capitalization drift. Tracks upstream issue #3028
+	// (multica-ai/multica). Remove once upstream lands a fix.
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "no value at ") ||
+		strings.Contains(lower, "not set") ||
+		strings.Contains(lower, "missing key") ||
+		strings.Contains(lower, "path not found")
 }
