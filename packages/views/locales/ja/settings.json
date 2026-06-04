@@ -342,6 +342,13 @@
         "label": "メンバー",
         "description": "イシューの作成と作業"
       }
-    }
+    },
+    "search_empty": "一致するディレクトリのメンバーが見つかりません。",
+    "search_loading": "ディレクトリを検索中...",
+    "search_hint": "名前、メール、または役職で検索",
+    "selected_member": "選択中: {{name}}",
+    "already_member": "すでにメンバーです",
+    "pending_first_login": "初回ログイン待ち",
+    "toast_pending_login": "メンバーを追加しました。初回ログインの完了が必要です。"
   }
 }

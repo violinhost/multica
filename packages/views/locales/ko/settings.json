@@ -292,7 +292,14 @@
         "label": "멤버",
         "description": "이슈 생성 및 작업"
       }
-    }
+    },
+    "search_empty": "일치하는 디렉터리 멤버가 없습니다.",
+    "search_loading": "디렉터리 검색 중...",
+    "search_hint": "이름, 이메일 또는 직책으로 검색",
+    "selected_member": "선택됨: {{name}}",
+    "already_member": "이미 멤버입니다",
+    "pending_first_login": "첫 로그인 대기 중",
+    "toast_pending_login": "멤버가 추가되었습니다. 아직 첫 로그인을 완료해야 합니다."
   },
   "lark": {
     "section_title": "Lark",
