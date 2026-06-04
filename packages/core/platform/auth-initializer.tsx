@@ -57,6 +57,14 @@ export function AuthInitializer({
           oidcAuthorizationEndpoint: cfg.oidc_authorization_endpoint,
           oidcEndSessionEndpoint: cfg.oidc_end_session_endpoint,
           oidcRedirectURI: cfg.oidc_redirect_uri,
+          googleClientId: cfg.google_client_id,
+          // Old servers omit this field — treat that as "creation allowed"
+          // (the managed-cloud default) rather than blocking the UI.
+          workspaceCreationDisabled: cfg.workspace_creation_disabled === true,
+        });
+        configStore.getState().setDaemonConfig({
+          daemonServerUrl: cfg.daemon_server_url,
+          daemonAppUrl: cfg.daemon_app_url,
         });
         if (cfg.posthog_key) {
           initAnalytics({
@@ -127,6 +135,7 @@ export function AuthInitializer({
         storage.removeItem("multica_token");
         onAuthFailure();
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <>{children}</>;

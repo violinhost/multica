@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Activity,
   BookOpenText,
   FileText,
   KeyRound,
   ListTodo,
+  Plug,
   Terminal,
+  Webhook,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import type { Agent, AgentRuntime } from "@multica/core/types";
+import { providerSupportsMcpConfig } from "@multica/core/agents";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { larkInstallationsOptions } from "@multica/core/lark";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +31,8 @@ import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";
 import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
+import { McpConfigTab } from "./tabs/mcp-config-tab";
+import { IntegrationsTab } from "./tabs/integrations-tab";
 import { ActorIssuesPanel } from "../../common/actor-issues-panel";
 import { useT } from "../../i18n";
 
@@ -34,15 +42,19 @@ type DetailTab =
   | "instructions"
   | "skills"
   | "env"
-  | "custom_args";
+  | "custom_args"
+  | "mcp_config"
+  | "integrations";
 
-const TAB_LABEL_KEY: Record<DetailTab, "activity" | "tasks" | "instructions" | "skills" | "environment" | "custom_args"> = {
+const TAB_LABEL_KEY: Record<DetailTab, "activity" | "tasks" | "instructions" | "skills" | "environment" | "custom_args" | "mcp_config" | "integrations"> = {
   activity: "activity",
   tasks: "tasks",
   instructions: "instructions",
   skills: "skills",
   env: "environment",
   custom_args: "custom_args",
+  mcp_config: "mcp_config",
+  integrations: "integrations",
 };
 
 const detailTabs: {
@@ -55,6 +67,8 @@ const detailTabs: {
   { id: "skills", icon: BookOpenText },
   { id: "env", icon: KeyRound },
   { id: "custom_args", icon: Terminal },
+  { id: "mcp_config", icon: Plug },
+  { id: "integrations", icon: Webhook },
 ];
 
 interface AgentOverviewPaneProps {
@@ -92,6 +106,7 @@ export function AgentOverviewPane({
   onUpdate,
 }: AgentOverviewPaneProps) {
   const { t } = useT("agents");
+  const wsId = useWorkspaceId();
   const [activeTab, setActiveTab] = useState<DetailTab>("activity");
   const [activeDirty, setActiveDirty] = useState(false);
   // Holds the destination when a tab change is intercepted by the dirty
@@ -102,6 +117,42 @@ export function AgentOverviewPane({
   const runtime = agent.runtime_id
     ? runtimes.find((r) => r.id === agent.runtime_id) ?? null
     : null;
+
+  // Cached per-workspace and shared with the inspector's bind button, so this
+  // is at most one extra GET per workspace. We only read `configured` to
+  // decide whether the Integrations tab is worth showing at all.
+  const { data: larkListing } = useQuery({
+    ...larkInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
+  const larkConfigured = larkListing?.configured === true;
+
+  // The MCP tab is only shown when the agent's runtime backend actually
+  // consumes mcp_config — see providerSupportsMcpConfig. We default to
+  // showing it when the runtime row hasn't loaded yet so a slow fetch
+  // can't transiently flicker the tab off and then on.
+  //
+  // The Integrations tab only appears once the deployment has Lark wired
+  // (configured). Unlike MCP we default to HIDING while the listing loads:
+  // deployments without Lark are the common case, so flashing the tab on
+  // then off would be the worse flicker.
+  const visibleTabs = useMemo(() => {
+    const showMcp = runtime ? providerSupportsMcpConfig(runtime.provider) : true;
+    return detailTabs.filter((tab) => {
+      if (tab.id === "mcp_config") return showMcp;
+      if (tab.id === "integrations") return larkConfigured;
+      return true;
+    });
+  }, [runtime, larkConfigured]);
+
+  // If the active tab disappears (e.g. user just switched the agent's
+  // runtime to one that doesn't read mcp_config), fall back to Activity
+  // for this render so the pane is never empty. The user's stored
+  // activeTab is left alone — switching back to a supporting runtime
+  // brings their selection back.
+  const effectiveTab: DetailTab = visibleTabs.some((tab) => tab.id === activeTab)
+    ? activeTab
+    : "activity";
 
   const requestTabChange = (next: DetailTab) => {
     if (next === activeTab) return;
@@ -129,13 +180,13 @@ export function AgentOverviewPane({
     // the grid-driven full-height behavior on tablet and up.
     <div className="flex min-h-[60vh] flex-col overflow-hidden rounded-lg border bg-background md:h-full md:min-h-0">
       <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b px-2 md:px-4">
-        {detailTabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => requestTabChange(tab.id)}
             className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition-colors ${
-              activeTab === tab.id
+              effectiveTab === tab.id
                 ? "border-foreground text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
@@ -147,13 +198,13 @@ export function AgentOverviewPane({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {activeTab === "activity" && <ActivityTab agent={agent} />}
-        {activeTab === "tasks" && (
+        {effectiveTab === "activity" && <ActivityTab agent={agent} />}
+        {effectiveTab === "tasks" && (
           <div className="flex h-full min-h-[520px] flex-col">
             <ActorIssuesPanel actorType="agent" actorId={agent.id} />
           </div>
         )}
-        {activeTab === "instructions" && (
+        {effectiveTab === "instructions" && (
           <TabContent>
             <InstructionsTab
               agent={agent}
@@ -162,22 +213,20 @@ export function AgentOverviewPane({
             />
           </TabContent>
         )}
-        {activeTab === "skills" && (
+        {effectiveTab === "skills" && (
           <TabContent>
             <SkillsTab agent={agent} />
           </TabContent>
         )}
-        {activeTab === "env" && (
+        {effectiveTab === "env" && (
           <TabContent>
             <EnvTab
               agent={agent}
-              readOnly={agent.custom_env_redacted}
-              onSave={(updates) => onUpdate(agent.id, updates)}
               onDirtyChange={setActiveDirty}
             />
           </TabContent>
         )}
-        {activeTab === "custom_args" && (
+        {effectiveTab === "custom_args" && (
           <TabContent>
             <CustomArgsTab
               agent={agent}
@@ -185,6 +234,20 @@ export function AgentOverviewPane({
               onSave={(updates) => onUpdate(agent.id, updates)}
               onDirtyChange={setActiveDirty}
             />
+          </TabContent>
+        )}
+        {effectiveTab === "mcp_config" && (
+          <TabContent>
+            <McpConfigTab
+              agent={agent}
+              onSave={(updates) => onUpdate(agent.id, updates)}
+              onDirtyChange={setActiveDirty}
+            />
+          </TabContent>
+        )}
+        {effectiveTab === "integrations" && (
+          <TabContent>
+            <IntegrationsTab agent={agent} />
           </TabContent>
         )}
       </div>

@@ -1719,32 +1719,49 @@ func TestReportTaskResult_NonCompletedHitsFailEndpoint(t *testing.T) {
 	cases := []struct {
 		name              string
 		status            string
+		comment           string
 		failureReasonIn   string
 		wantFailureReason string
 	}{
 		{
 			name:              "blocked with explicit reason preserves it",
 			status:            "blocked",
+			comment:           "rate limit reached",
 			failureReasonIn:   "iteration_limit",
 			wantFailureReason: "iteration_limit",
 		},
 		{
-			name:              "blocked without reason defaults to agent_error",
+			// MUL-2946: when the daemon doesn't supply a refined
+			// reason, the comment text is run through
+			// taskfailure.Classify so the failure_reason column
+			// lands in the canonical refined taxonomy instead of
+			// the legacy "agent_error" coarse bucket.
+			name:              "blocked without reason classifies comment as rate-limit",
 			status:            "blocked",
+			comment:           "rate limit reached",
 			failureReasonIn:   "",
-			wantFailureReason: "agent_error",
+			wantFailureReason: "agent_error.provider_capacity_or_rate_limit",
 		},
 		{
-			name:              "cancelled defaults to cancelled reason",
+			name:              "blocked without reason and unrecognized comment lands in agent_error.unknown",
+			status:            "blocked",
+			comment:           "the agent gave up for reasons we don't recognize",
+			failureReasonIn:   "",
+			wantFailureReason: "agent_error.unknown",
+		},
+		{
+			name:              "cancelled defaults to cancelled reason regardless of comment",
 			status:            "cancelled",
+			comment:           "rate limit reached",
 			failureReasonIn:   "",
 			wantFailureReason: "cancelled",
 		},
 		{
-			name:              "unknown status fails closed",
+			name:              "unknown status routes through classifier",
 			status:            "weird_new_status",
+			comment:           "rate limit reached",
 			failureReasonIn:   "",
-			wantFailureReason: "agent_error",
+			wantFailureReason: "agent_error.provider_capacity_or_rate_limit",
 		},
 	}
 
@@ -1757,7 +1774,7 @@ func TestReportTaskResult_NonCompletedHitsFailEndpoint(t *testing.T) {
 			d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
 			d.reportTaskResult(context.Background(), "task-x", TaskResult{
 				Status:        tc.status,
-				Comment:       "rate limit reached",
+				Comment:       tc.comment,
 				SessionID:     "ses-x",
 				WorkDir:       "/tmp/x",
 				FailureReason: tc.failureReasonIn,
@@ -1768,7 +1785,7 @@ func TestReportTaskResult_NonCompletedHitsFailEndpoint(t *testing.T) {
 			if rec.path != "/api/daemon/tasks/task-x/fail" {
 				t.Fatalf("expected /fail endpoint for status=%q, got %s", tc.status, rec.path)
 			}
-			if rec.payload["error"] != "rate limit reached" {
+			if rec.payload["error"] != tc.comment {
 				t.Errorf("error body: got %v", rec.payload["error"])
 			}
 			if got := rec.payload["failure_reason"]; got != tc.wantFailureReason {
@@ -1778,6 +1795,123 @@ func TestReportTaskResult_NonCompletedHitsFailEndpoint(t *testing.T) {
 				t.Errorf("session_id should be forwarded on failure paths so chat resume keeps working, got %v", rec.payload["session_id"])
 			}
 		})
+	}
+}
+
+// Regression test for the MUL-2780 incident: a short 502 burst on the
+// /complete callback used to (a) drop the task at the first failure and
+// (b) wrongly fall back to /fail, surfacing a successful run as red.
+// With the retry helper in place, a transient 502 followed by a 200 must
+// resolve via /complete without ever touching /fail.
+func TestReportTaskResult_RetriesTransientCompleteThenSucceeds(t *testing.T) {
+	defer noSleepRetry(t)()
+
+	var completeCalls, failCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/complete"):
+			n := completeCalls.Add(1)
+			if n == 1 {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(req.URL.Path, "/fail"):
+			failCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	d.reportTaskResult(context.Background(), "task-retry", TaskResult{
+		Status:  "completed",
+		Comment: "ok",
+	}, slog.Default())
+
+	if got := completeCalls.Load(); got != 2 {
+		t.Fatalf("expected 2 complete attempts (one 502, one 200), got %d", got)
+	}
+	if got := failCalls.Load(); got != 0 {
+		t.Fatalf("transient 502 must not fall back to /fail (would lose successful result), got %d /fail calls", got)
+	}
+}
+
+// Pins the new "don't downgrade success to failure on transient errors"
+// rule: when /complete is 502 across the entire retry schedule, we must
+// NOT fall through to /fail — that would surface a real success as a
+// failure in the UI. The task is left in running for a future recovery
+// path to pick up.
+func TestReportTaskResult_TransientCompleteExhaustedDoesNotFallback(t *testing.T) {
+	defer noSleepRetry(t)()
+
+	prevSchedule := defaultTerminalRetrySchedule
+	defaultTerminalRetrySchedule = []time.Duration{time.Nanosecond, time.Nanosecond}
+	t.Cleanup(func() { defaultTerminalRetrySchedule = prevSchedule })
+
+	var completeCalls, failCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/complete"):
+			completeCalls.Add(1)
+			w.WriteHeader(http.StatusBadGateway)
+		case strings.HasSuffix(req.URL.Path, "/fail"):
+			failCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	d.reportTaskResult(context.Background(), "task-stuck", TaskResult{
+		Status:  "completed",
+		Comment: "ok",
+	}, slog.Default())
+
+	if got := completeCalls.Load(); got != int32(len(defaultTerminalRetrySchedule)+1) {
+		t.Fatalf("expected %d complete attempts, got %d", len(defaultTerminalRetrySchedule)+1, got)
+	}
+	if got := failCalls.Load(); got != 0 {
+		t.Fatalf("exhausted transient retries must NOT fall back to /fail; got %d /fail calls", got)
+	}
+}
+
+// On permanent 4xx from /complete (e.g. 400 bad body, 404 task not found)
+// the helper bails immediately and the daemon falls back to /fail so the
+// UI shows a concrete failure rather than a perpetually-running task.
+func TestReportTaskResult_PermanentCompleteFallsBackToFail(t *testing.T) {
+	defer noSleepRetry(t)()
+
+	var completeCalls, failCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/complete"):
+			completeCalls.Add(1)
+			w.WriteHeader(http.StatusBadRequest)
+		case strings.HasSuffix(req.URL.Path, "/fail"):
+			failCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	d.reportTaskResult(context.Background(), "task-bad", TaskResult{
+		Status:  "completed",
+		Comment: "ok",
+	}, slog.Default())
+
+	if got := completeCalls.Load(); got != 1 {
+		t.Fatalf("permanent 400 should not retry, got %d complete attempts", got)
+	}
+	if got := failCalls.Load(); got != 1 {
+		t.Fatalf("permanent /complete should fall back to /fail exactly once, got %d", got)
 	}
 }
 

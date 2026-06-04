@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import type { WSClient } from "../api/ws-client";
 import type { StoreApi, UseBoundStore } from "zustand";
 import type { AuthState } from "../auth/store";
@@ -14,6 +14,7 @@ import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
+import { labelKeys } from "../labels/queries";
 import {
   agentTaskSnapshotKeys,
   agentActivityKeys,
@@ -21,6 +22,7 @@ import {
   agentTasksKeys,
 } from "../agents/queries";
 import { githubKeys } from "../github/queries";
+import { larkKeys } from "../lark/queries";
 import {
   onIssueCreated,
   onIssueUpdated,
@@ -62,12 +64,15 @@ import type {
   TaskMessagePayload,
   TaskQueuedPayload,
   TaskDispatchPayload,
+  TaskRunningPayload,
+  TaskWaitingLocalDirectoryPayload,
   TaskCompletedPayload,
   TaskFailedPayload,
   TaskCancelledPayload,
   ChatDonePayload,
   ChatMessage,
   ChatPendingTask,
+  ChatMessagesPage,
   InvitationCreatedPayload,
 } from "../types";
 
@@ -84,23 +89,27 @@ export function applyChatDoneToCache(
   const messageId = payload.message_id;
   const content = payload.content;
   if (messageId && content !== undefined) {
+    const assistant: ChatMessage = {
+      id: messageId,
+      chat_session_id: sessionId,
+      role: "assistant",
+      content,
+      task_id: taskId,
+      created_at: payload.created_at ?? new Date().toISOString(),
+      elapsed_ms: payload.elapsed_ms ?? null,
+    };
     qc.setQueryData<ChatMessage[] | undefined>(
       chatKeys.messages(sessionId),
       (old) => {
         if (!old) return old; // first fetch will pick it up
         // Idempotent against reconnect replay.
         if (old.some((m) => m.id === messageId)) return old;
-        const assistant: ChatMessage = {
-          id: messageId,
-          chat_session_id: sessionId,
-          role: "assistant",
-          content,
-          task_id: taskId,
-          created_at: payload.created_at ?? new Date().toISOString(),
-          elapsed_ms: payload.elapsed_ms ?? null,
-        };
         return [...old, assistant];
       },
+    );
+    qc.setQueryData<InfiniteData<ChatMessagesPage> | undefined>(
+      chatKeys.messagesPage(sessionId),
+      (old) => patchLatestChatMessagePage(old, assistant),
     );
   }
   // Replacement is in the messages list now; safe to drop pending.
@@ -108,7 +117,27 @@ export function applyChatDoneToCache(
   // Authoritative refetch reconciles redaction / migrations / clients
   // that took the fallback branch above.
   qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
+  qc.invalidateQueries({ queryKey: chatKeys.messagesPage(sessionId) });
   qc.invalidateQueries({ queryKey: chatKeys.pendingTask(sessionId) });
+}
+
+function patchLatestChatMessagePage(
+  old: InfiniteData<ChatMessagesPage> | undefined,
+  message: ChatMessage,
+): InfiniteData<ChatMessagesPage> | undefined {
+  if (!old?.pages.length) return old;
+  const seen = old.pages.some((page) => page.messages.some((m) => m.id === message.id));
+  if (seen) return old;
+  return {
+    ...old,
+    pages: old.pages.map((page, index) => {
+      if (index !== 0) return page;
+      return {
+        ...page,
+        messages: [...page.messages, message],
+      };
+    }),
+  };
 }
 
 /**
@@ -155,14 +184,31 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
     qc.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) });
     qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
+    qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentActivityKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentRunCountsKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: chatKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: labelKeys.all(wsId) });
   }
   qc.invalidateQueries({ queryKey: workspaceKeys.list() });
+}
+
+function invalidateSquadMemberStatusQueries(qc: QueryClient, wsId: string): void {
+  qc.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey;
+      return (
+        key[0] === "workspaces" &&
+        key[1] === wsId &&
+        key[2] === "squads" &&
+        key[4] === "members-status"
+      );
+    },
+  });
 }
 
 export interface RealtimeSyncStores {
@@ -215,10 +261,10 @@ export function useRealtimeSync(
         if (wsId) {
           qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
           // Squad members status is derived per agent, so any agent
-          // change (status flip, archive, runtime swap) needs to refresh
-          // the per-squad members-status cache. Prefix-matches both the
-          // squad list and every squadMemberStatus query.
-          qc.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) });
+          // change (status flip, archive, runtime swap) needs to refresh the
+          // per-squad members-status cache without refetching the static squad
+          // list summary.
+          invalidateSquadMemberStatusQueries(qc, wsId);
         }
       },
       member: () => {
@@ -271,9 +317,8 @@ export function useRealtimeSync(
           qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
           // Runtime online/offline transitions move the derived status
           // for every agent that hosts on this runtime, which shifts the
-          // working/idle/offline pill on the squad page. Same prefix
-          // invalidation pattern as the agent handler above.
-          qc.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) });
+          // working/idle/offline pill on the squad page.
+          invalidateSquadMemberStatusQueries(qc, wsId);
         }
       },
       autopilot: () => {
@@ -283,6 +328,10 @@ export function useRealtimeSync(
       github_installation: () => {
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: githubKeys.installations(wsId) });
+      },
+      lark_installation: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: larkKeys.installations(wsId) });
       },
       pull_request: () => {
         // PR list is keyed by issue id, not workspace, so we invalidate all
@@ -321,9 +370,8 @@ export function useRealtimeSync(
         // event shifts the aggregated usage numbers.
         qc.invalidateQueries({ queryKey: ["issues", "usage"] });
         // Squad members-status reads the same task lifecycle to flip
-        // working ↔ idle for each agent member. Prefix-matches every
-        // mounted squad-page's members-status query in O(1).
-        qc.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) });
+        // working ↔ idle for each agent member.
+        invalidateSquadMemberStatusQueries(qc, wsId);
       },
     };
 
@@ -773,6 +821,43 @@ export function useRealtimeSync(
       );
     });
 
+    // task:running fires when the daemon transitions a previously-parked task
+    // (waiting_local_directory) back into the run phase. The dispatch→running
+    // path is collapsed in the handler above, so this handler exists mainly to
+    // clear a stale `waiting_local_directory` pill — without it, the pill
+    // would stay parked even after the daemon resumed work.
+    const unsubTaskRunning = ws.on("task:running", (p) => {
+      const payload = p as TaskRunningPayload;
+      if (!payload.chat_session_id) return;
+      qc.setQueryData<ChatPendingTask>(
+        chatKeys.pendingTask(payload.chat_session_id),
+        (old) => {
+          if (!old || old.task_id !== payload.task_id) return old;
+          return { ...old, status: "running" };
+        },
+      );
+    });
+
+    // task:waiting_local_directory fires when the daemon dequeues a task but
+    // can't acquire the local_directory path lock — another task on this
+    // daemon is in the same directory. Write the status so TaskStatusPill
+    // can render the "Waiting for local directory" stage instead of pinning
+    // a stale "Starting / Thinking" frame.
+    const unsubTaskWaitingLocalDir = ws.on(
+      "task:waiting_local_directory",
+      (p) => {
+        const payload = p as TaskWaitingLocalDirectoryPayload;
+        if (!payload.chat_session_id) return;
+        qc.setQueryData<ChatPendingTask>(
+          chatKeys.pendingTask(payload.chat_session_id),
+          (old) => {
+            if (!old || old.task_id !== payload.task_id) return old;
+            return { ...old, status: "waiting_local_directory" };
+          },
+        );
+      },
+    );
+
     // task:cancelled reaches us when:
     //   1. handleStop already cleared the cache locally (this is a no-op confirm)
     //   2. another tab / admin / system cancels — this is the only path that
@@ -914,6 +999,8 @@ export function useRealtimeSync(
       unsubChatDone();
       unsubTaskQueued();
       unsubTaskDispatch();
+      unsubTaskRunning();
+      unsubTaskWaitingLocalDir();
       unsubTaskCancelled();
       unsubTaskCompleted();
       unsubTaskFailed();
