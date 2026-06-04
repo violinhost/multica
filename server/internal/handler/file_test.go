@@ -481,8 +481,10 @@ func TestAttachmentToResponse_NonCloudFrontUsesDownloadEndpoint(t *testing.T) {
 	if resp.URL != "http://rustfs:9000/test-bucket/private.txt" {
 		t.Fatalf("stored url changed: %q", resp.URL)
 	}
-	if resp.DownloadURL != "/api/attachments/"+id+"/download" {
-		t.Fatalf("download_url = %q, want unified endpoint", resp.DownloadURL)
+	// Velafi: download_url carries ?workspace_id so header-less contexts
+	// (PDF/media preview <iframe>) resolve the workspace from the URL.
+	if resp.DownloadURL != "/api/attachments/"+id+"/download?workspace_id="+testWorkspaceID {
+		t.Fatalf("download_url = %q, want unified endpoint with workspace_id", resp.DownloadURL)
 	}
 }
 

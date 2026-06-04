@@ -79,7 +79,7 @@ func (h *Handler) attachmentToResponse(a db.Attachment) AttachmentResponse {
 		UploaderID:   uuidToString(a.UploaderID),
 		Filename:     a.Filename,
 		URL:          a.Url,
-		DownloadURL:  attachmentDownloadPath(id),
+		DownloadURL:  attachmentDownloadPath(id, uuidToString(a.WorkspaceID)),
 		ContentType:  a.ContentType,
 		SizeBytes:    a.SizeBytes,
 		CreatedAt:    a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
@@ -106,8 +106,16 @@ func (h *Handler) attachmentToResponse(a db.Attachment) AttachmentResponse {
 	return resp
 }
 
-func attachmentDownloadPath(id string) string {
-	return "/api/attachments/" + id + "/download"
+func attachmentDownloadPath(id, workspaceID string) string {
+	// Velafi 2026-06-04: carry workspace_id in the URL so the download endpoint
+	// works from header-less contexts — specifically the in-app PDF/media preview
+	// <iframe src=download_url>, which cannot send the X-Workspace-Slug header.
+	// The workspace middleware accepts ?workspace_id; access is still gated by
+	// (attachment id, workspace_id) membership in loadAttachmentForRequest.
+	if workspaceID == "" {
+		return "/api/attachments/" + id + "/download"
+	}
+	return "/api/attachments/" + id + "/download?workspace_id=" + workspaceID
 }
 
 func normalizeAttachmentDownloadMode(raw string) (attachmentDownloadMode, bool) {
