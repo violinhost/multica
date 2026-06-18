@@ -19,6 +19,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/logger"
+	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -49,8 +50,8 @@ import (
 // Refs: multica-ai/multica#1014.
 
 const (
-	defaultOIDCAuthMethod        = "oidc"
-	envExternalProviderOverride  = "OIDC_EXTERNAL_PROVIDER"
+	defaultOIDCAuthMethod       = "oidc"
+	envExternalProviderOverride = "OIDC_EXTERNAL_PROVIDER"
 )
 
 // oidcRuntime caches the *oidc.Provider, the corresponding verifier, and
@@ -320,7 +321,7 @@ func (h *Handler) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 		evt := analytics.Signup(uuidToString(user.ID), user.Email, signupSourceFromRequest(r))
 		evt.Properties["auth_method"] = "oidc"
 		evt.Properties["oidc_provider"] = provName
-		h.Analytics.Capture(evt)
+		obsmetrics.RecordEvent(h.Analytics, h.Metrics, evt)
 	}
 
 	// Backfill name and avatar from IDP claims when they're missing or stale.

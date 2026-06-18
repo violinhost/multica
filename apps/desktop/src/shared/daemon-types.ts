@@ -22,6 +22,16 @@ export interface DaemonStatus {
   profile?: string;
   /** Backend URL the daemon connects to. */
   serverUrl?: string;
+  /**
+   * True when a daemon is running but in an environment the app can't control
+   * — its reported OS differs from the desktop host's (e.g. a Linux daemon
+   * inside WSL2 behind a Windows desktop, reachable only via localhost
+   * forwarding). The app's start/stop CLI acts on the host process namespace,
+   * so auto-start/auto-stop can't reach it; the UI disables those toggles
+   * instead of silently no-op'ing. Only ever set on a running daemon, so it
+   * never disables the toggles for a normally-managed native daemon. See #3916.
+   */
+  externallyManaged?: boolean;
 }
 
 export interface DaemonPrefs {
@@ -56,6 +66,19 @@ export function formatUptime(uptime?: string): string {
   const h = match[1] ? `${match[1]}h ` : "";
   const m = match[2] ? `${match[2]}m` : "";
   return `${h}${m}`.trim() || uptime;
+}
+
+/**
+ * Whether a raw daemon `/health` `status` value means a live daemon is on the
+ * port — either fully "running" (ready) or still "starting" (port bound,
+ * preflight in progress). Mirrors the Go `daemonAlive()` in
+ * server/cmd/multica/cmd_daemon.go so the Desktop lifecycle agrees with the
+ * CLI: a "starting" daemon is already there and must not be spawned over (the
+ * CLI rejects that as "already running"). This is liveness, not readiness —
+ * version-restart decisions still gate on the stricter "running".
+ */
+export function daemonStatusAlive(status: string | undefined): boolean {
+  return status === "running" || status === "starting";
 }
 
 /**

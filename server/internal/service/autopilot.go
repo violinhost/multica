@@ -197,6 +197,25 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 		return fmt.Errorf("create issue: %w", err)
 	}
 
+	// Fan out the default subscriber template inside the same tx as the
+	// issue insert, before EventIssueCreated fires — so notification
+	// listeners see the full subscriber set on the first event instead of
+	// racing the listener that would otherwise hydrate the template.
+	templateSubs, err := qtx.ListAutopilotSubscribers(ctx, ap.ID)
+	if err != nil {
+		return fmt.Errorf("list autopilot subscribers: %w", err)
+	}
+	for _, sub := range templateSubs {
+		if err := qtx.AddIssueSubscriber(ctx, db.AddIssueSubscriberParams{
+			IssueID:  issue.ID,
+			UserType: sub.UserType,
+			UserID:   sub.UserID,
+			Reason:   "autopilot",
+		}); err != nil {
+			return fmt.Errorf("add autopilot subscriber to issue: %w", err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
@@ -227,6 +246,17 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 	})
 	s.captureIssueCreatedFromAutopilot(ap, run, issue, leader.ID)
 
+	// The issue:created notification listener only handles handler.IssueResponse
+	// payloads and only direct-notifies the assignee + @mentions; subscribers
+	// don't get an inbox at creation time on the manual path because there are
+	// none yet. The autopilot path is different: the template subscribers were
+	// fanned out into issue_subscriber inside the tx above, so they exist at the
+	// moment of creation and OQ3 says they should receive the same subscription
+	// events as reason='manual'. Issue creation is one such event — so write
+	// the inbox rows directly here. Done after commit so a failure here doesn't
+	// roll back the issue itself.
+	s.notifyAutopilotSubscribersOnCreate(ctx, ap, issue, leader.ID, templateSubs)
+
 	// Enqueue agent task via the existing flow. Squad-assigned autopilots
 	// route to the resolved leader as the executing agent (Path A from
 	// MUL-2429); agent-assigned autopilots go through the standard issue
@@ -255,6 +285,85 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 		"run_id", util.UUIDToString(run.ID),
 	)
 	return nil
+}
+
+// notifyAutopilotSubscribersOnCreate writes an inbox_item for each template
+// subscriber of an autopilot-created issue and broadcasts an inbox:new event
+// so the recipient's inbox updates in real time. Mirrors the inbox payload
+// shape from notification_listeners.go so the WS consumer sees the same fields
+// the listener-driven path produces. Failures are logged, not propagated:
+// the issue and its subscriber rows are already committed, and an inbox-write
+// hiccup must not bubble up as a dispatch failure.
+func (s *AutopilotService) notifyAutopilotSubscribersOnCreate(
+	ctx context.Context,
+	ap db.Autopilot,
+	issue db.Issue,
+	leaderID pgtype.UUID,
+	subscribers []db.AutopilotSubscriber,
+) {
+	if len(subscribers) == 0 {
+		return
+	}
+	details, _ := json.Marshal(map[string]string{
+		"autopilot_id": util.UUIDToString(ap.ID),
+		"reason":       "autopilot",
+	})
+	for _, sub := range subscribers {
+		// Autopilot subscribers are restricted to user_type='member' at the
+		// handler boundary; defend in case that constraint is ever relaxed
+		// (agents don't have inbox).
+		if sub.UserType != "member" {
+			continue
+		}
+		item, err := s.Queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
+			WorkspaceID:   ap.WorkspaceID,
+			RecipientType: "member",
+			RecipientID:   sub.UserID,
+			Type:          "issue_subscribed",
+			Severity:      "info",
+			IssueID:       issue.ID,
+			Title:         issue.Title,
+			Body:          pgtype.Text{},
+			ActorType:     pgtype.Text{String: "agent", Valid: true},
+			ActorID:       leaderID,
+			Details:       details,
+		})
+		if err != nil {
+			slog.Error("autopilot subscriber inbox write failed",
+				"autopilot_id", util.UUIDToString(ap.ID),
+				"issue_id", util.UUIDToString(issue.ID),
+				"recipient_id", util.UUIDToString(sub.UserID),
+				"error", err,
+			)
+			continue
+		}
+		s.Bus.Publish(events.Event{
+			Type:        protocol.EventInboxNew,
+			WorkspaceID: util.UUIDToString(ap.WorkspaceID),
+			ActorType:   "agent",
+			ActorID:     util.UUIDToString(leaderID),
+			Payload: map[string]any{
+				"item": map[string]any{
+					"id":             util.UUIDToString(item.ID),
+					"workspace_id":   util.UUIDToString(item.WorkspaceID),
+					"recipient_type": item.RecipientType,
+					"recipient_id":   util.UUIDToString(item.RecipientID),
+					"type":           item.Type,
+					"severity":       item.Severity,
+					"issue_id":       util.UUIDToPtr(item.IssueID),
+					"issue_status":   issue.Status,
+					"title":          item.Title,
+					"body":           util.TextToPtr(item.Body),
+					"read":           item.Read,
+					"archived":       item.Archived,
+					"created_at":     util.TimestampToString(item.CreatedAt),
+					"actor_type":     util.TextToPtr(item.ActorType),
+					"actor_id":       util.UUIDToPtr(item.ActorID),
+					"details":        json.RawMessage(item.Details),
+				},
+			},
+		})
+	}
 }
 
 // errDispatchSkipped wraps a readiness failure encountered after the
@@ -436,6 +545,79 @@ func (s *AutopilotService) SyncRunFromTask(ctx context.Context, task db.AgentTas
 		s.captureAutopilotRunFailed(autopilot, updatedRun, updatedRun.Source, reason)
 		s.publishRunDone(wsID, updatedRun, "failed")
 	}
+}
+
+// SyncRunFromLinkedIssueTask fails a create_issue autopilot run when its
+// linked issue task fails terminally before the issue itself reaches a
+// terminal status. create_issue tasks are linked through issue_id rather than
+// autopilot_run_id, so SyncRunFromTask cannot see them directly. Without this
+// the run would hang in `issue_created` forever — and because the failure-rate
+// auto-pause monitor excludes issue_created/running runs, a consistently
+// failing autopilot would never trip the auto-pause either.
+//
+// "Terminal" means no task is still active for the issue. FailTask enqueues an
+// auto-retry for infra-shaped failures (timeout, runtime offline/recovery,
+// codex no-progress) BEFORE it broadcasts the failure event, so an active task
+// here means another attempt is already in flight — we wait for it instead of
+// failing the run prematurely. Once retries are exhausted (or the failure was
+// never retryable in the first place), the run fails carrying the task's reason.
+func (s *AutopilotService) SyncRunFromLinkedIssueTask(ctx context.Context, task db.AgentTaskQueue) {
+	if task.AutopilotRunID.Valid || !task.IssueID.Valid || task.Status != "failed" {
+		return
+	}
+	// Only create_issue runs link through issue_id (and their linked issue is
+	// always origin_type=autopilot by construction), so a hit here both
+	// identifies an in-flight create_issue run and bails the common case of
+	// ordinary issue/chat task failures after a single query.
+	run, err := s.Queries.GetAutopilotRunByIssue(ctx, task.IssueID)
+	if err != nil {
+		return // no active run linked to this issue
+	}
+	// A still-active task — typically the auto-retry FailTask just enqueued —
+	// means the dispatch isn't terminal yet; wait for the final attempt.
+	hasActive, err := s.Queries.HasActiveTaskForIssue(ctx, task.IssueID)
+	if err != nil {
+		slog.Warn("failed to check active tasks for autopilot issue failure",
+			"issue_id", util.UUIDToString(task.IssueID),
+			"task_id", util.UUIDToString(task.ID),
+			"error", err,
+		)
+		return
+	}
+	if hasActive {
+		return
+	}
+	autopilot, err := s.Queries.GetAutopilot(ctx, run.AutopilotID)
+	if err != nil {
+		return
+	}
+
+	reason := taskFailureReasonForAutopilotRun(task)
+	updatedRun, err := s.Queries.UpdateAutopilotRunFailed(ctx, db.UpdateAutopilotRunFailedParams{
+		ID:            run.ID,
+		FailureReason: pgtype.Text{String: reason, Valid: reason != ""},
+	})
+	if err != nil {
+		slog.Warn("failed to fail autopilot run from linked issue task",
+			"run_id", util.UUIDToString(run.ID),
+			"issue_id", util.UUIDToString(task.IssueID),
+			"task_id", util.UUIDToString(task.ID),
+			"error", err,
+		)
+		return
+	}
+	s.captureAutopilotRunFailed(autopilot, updatedRun, updatedRun.Source, reason)
+	s.publishRunDone(util.UUIDToString(autopilot.WorkspaceID), updatedRun, "failed")
+}
+
+func taskFailureReasonForAutopilotRun(task db.AgentTaskQueue) string {
+	if task.Error.Valid && strings.TrimSpace(task.Error.String) != "" {
+		return task.Error.String
+	}
+	if task.FailureReason.Valid && strings.TrimSpace(task.FailureReason.String) != "" {
+		return task.FailureReason.String
+	}
+	return "task failed"
 }
 
 // handleDispatchSkip recognises an errDispatchSkipped returned from a

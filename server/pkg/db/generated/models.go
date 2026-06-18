@@ -62,6 +62,7 @@ type AgentRuntime struct {
 	OwnerID        pgtype.UUID        `json:"owner_id"`
 	LegacyDaemonID pgtype.Text        `json:"legacy_daemon_id"`
 	Visibility     string             `json:"visibility"`
+	ProfileID      pgtype.UUID        `json:"profile_id"`
 }
 
 type AgentSkill struct {
@@ -97,6 +98,7 @@ type AgentTaskQueue struct {
 	ForceFreshSession bool               `json:"force_fresh_session"`
 	IsLeaderTask      bool               `json:"is_leader_task"`
 	WaitReason        pgtype.Text        `json:"wait_reason"`
+	InitiatorUserID   pgtype.UUID        `json:"initiator_user_id"`
 }
 
 type Attachment struct {
@@ -148,6 +150,13 @@ type AutopilotRun struct {
 	Result         []byte             `json:"result"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	SquadID        pgtype.UUID        `json:"squad_id"`
+}
+
+type AutopilotSubscriber struct {
+	AutopilotID pgtype.UUID        `json:"autopilot_id"`
+	UserType    string             `json:"user_type"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type AutopilotTrigger struct {
@@ -208,6 +217,7 @@ type Comment struct {
 	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
 	ResolvedByType pgtype.Text        `json:"resolved_by_type"`
 	ResolvedByID   pgtype.UUID        `json:"resolved_by_id"`
+	SourceTaskID   pgtype.UUID        `json:"source_task_id"`
 }
 
 type CommentReaction struct {
@@ -275,6 +285,30 @@ type GithubInstallation struct {
 	AccountAvatarUrl pgtype.Text        `json:"account_avatar_url"`
 	ConnectedByID    pgtype.UUID        `json:"connected_by_id"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type GithubPendingCheckSuite struct {
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	InstallationID int64              `json:"installation_id"`
+	RepoOwner      string             `json:"repo_owner"`
+	RepoName       string             `json:"repo_name"`
+	PrNumber       int32              `json:"pr_number"`
+	SuiteID        int64              `json:"suite_id"`
+	HeadSha        string             `json:"head_sha"`
+	AppID          int64              `json:"app_id"`
+	Conclusion     pgtype.Text        `json:"conclusion"`
+	Status         string             `json:"status"`
+	SuiteUpdatedAt pgtype.Timestamptz `json:"suite_updated_at"`
+	ReceivedAt     pgtype.Timestamptz `json:"received_at"`
+}
+
+type GithubPendingInstallation struct {
+	InstallationID   int64              `json:"installation_id"`
+	AccountLogin     string             `json:"account_login"`
+	AccountType      string             `json:"account_type"`
+	AccountAvatarUrl pgtype.Text        `json:"account_avatar_url"`
+	ReceivedAt       pgtype.Timestamptz `json:"received_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
@@ -453,7 +487,6 @@ type LarkInstallation struct {
 	AppSecretEncrypted []byte             `json:"app_secret_encrypted"`
 	TenantKey          pgtype.Text        `json:"tenant_key"`
 	BotOpenID          string             `json:"bot_open_id"`
-	BotUnionID         pgtype.Text        `json:"bot_union_id"`
 	InstallerUserID    pgtype.UUID        `json:"installer_user_id"`
 	Status             string             `json:"status"`
 	WsLeaseToken       pgtype.Text        `json:"ws_lease_token"`
@@ -461,6 +494,8 @@ type LarkInstallation struct {
 	InstalledAt        pgtype.Timestamptz `json:"installed_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	BotUnionID         pgtype.Text        `json:"bot_union_id"`
+	Region             string             `json:"region"`
 }
 
 type LarkOutboundCardMessage struct {
@@ -548,6 +583,21 @@ type ProjectResource struct {
 	CreatedBy    pgtype.UUID        `json:"created_by"`
 }
 
+type RuntimeProfile struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	DisplayName    string             `json:"display_name"`
+	ProtocolFamily string             `json:"protocol_family"`
+	CommandName    string             `json:"command_name"`
+	Description    pgtype.Text        `json:"description"`
+	FixedArgs      []byte             `json:"fixed_args"`
+	Visibility     string             `json:"visibility"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	Enabled        bool               `json:"enabled"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Skill struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
@@ -591,6 +641,31 @@ type SquadMember struct {
 	MemberID   pgtype.UUID        `json:"member_id"`
 	Role       string             `json:"role"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type SysCronExecution struct {
+	ID           pgtype.UUID        `json:"id"`
+	JobName      string             `json:"job_name"`
+	ScopeKind    string             `json:"scope_kind"`
+	ScopeID      string             `json:"scope_id"`
+	PlanTime     pgtype.Timestamptz `json:"plan_time"`
+	Status       string             `json:"status"`
+	Attempt      int32              `json:"attempt"`
+	MaxAttempts  int32              `json:"max_attempts"`
+	NextRetryAt  pgtype.Timestamptz `json:"next_retry_at"`
+	RunnerID     pgtype.Text        `json:"runner_id"`
+	LeaseToken   pgtype.UUID        `json:"lease_token"`
+	HeartbeatAt  pgtype.Timestamptz `json:"heartbeat_at"`
+	StaleAfter   pgtype.Timestamptz `json:"stale_after"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	FinishedAt   pgtype.Timestamptz `json:"finished_at"`
+	DurationMs   pgtype.Int4        `json:"duration_ms"`
+	RowsAffected pgtype.Int8        `json:"rows_affected"`
+	Result       []byte             `json:"result"`
+	ErrorCode    pgtype.Text        `json:"error_code"`
+	ErrorMsg     pgtype.Text        `json:"error_msg"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type TaskMessage struct {

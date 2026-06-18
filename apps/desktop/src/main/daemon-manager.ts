@@ -17,8 +17,14 @@ import {
 import { join } from "path";
 import { homedir, hostname } from "os";
 import type { DaemonStatus, DaemonPrefs } from "../shared/daemon-types";
+import { daemonStatusAlive } from "../shared/daemon-types";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
+import {
+  daemonLifecycleUnreachable,
+  isDaemonExternallyManaged,
+  normalizeHostOS,
+} from "./daemon-os";
 import {
   classifyAuthProbe,
   isAuthStatusError,
@@ -35,6 +41,13 @@ const LOG_TAIL_MAX_RETRIES = 5;
 // take a while (it renews the PAT and lists workspaces before serving /health), so we
 // wait past the common case to avoid probing healthy-but-slow starts.
 const AUTH_PROBE_GRACE_MS = 10_000;
+// `multica daemon start` blocks until the daemon reports ready, polling /health
+// for up to its own startup timeout (45s in server/cmd/multica/cmd_daemon.go) to
+// cover cold-start agent-version detection. This execFile timeout MUST stay
+// above that — otherwise Electron kills the CLI supervisor mid-startup and a
+// healthy-but-slow start is misreported as a failure (the detached daemon child
+// keeps running, so the UI flashes "stopped" then "running").
+const DAEMON_START_EXEC_TIMEOUT_MS = 60_000;
 
 const DEFAULT_PREFS: DaemonPrefs = { autoStart: true, autoStop: false };
 
@@ -153,6 +166,8 @@ function sendStatus(status: DaemonStatus): void {
 interface HealthPayload {
   status?: string;
   pid?: number;
+  /** Daemon's runtime.GOOS. Absent on daemons older than the #3916 fix. */
+  os?: string;
   uptime?: string;
   daemon_id?: string;
   device_name?: string;
@@ -321,6 +336,13 @@ async function fetchHealth(): Promise<DaemonStatus> {
     if (authExpired) {
       return { state: "auth_expired", profile: active.name };
     }
+    // The daemon binds /health before preflight finishes and self-reports
+    // "starting" until it's ready. Trust that over our own currentState, so a
+    // daemon booting on its own — or started via the CLI — surfaces as
+    // "starting" instead of "stopped".
+    if (data?.status === "starting") {
+      return { state: "starting", profile: active.name };
+    }
     return {
       state: currentState === "starting" ? "starting" : "stopped",
       profile: active.name,
@@ -331,6 +353,16 @@ async function fetchHealth(): Promise<DaemonStatus> {
   // re-login prompt disappears once the user reconnects.
   authExpired = false;
   startingSince = null;
+
+  // A running daemon whose OS differs from this host's is one we can't drive
+  // via the native lifecycle CLI (e.g. Linux-in-WSL2 behind a Windows desktop,
+  // reachable only over localhost forwarding). Surface it so the UI disables
+  // the auto-start/auto-stop toggles instead of letting them silently no-op,
+  // and so before-quit skips a stop that would never land. See #3916.
+  const externallyManaged = isDaemonExternallyManaged(
+    data.os,
+    normalizeHostOS(process.platform),
+  );
 
   // Safety: if we have a target URL and the daemon on our port reports a
   // different server_url, it's not "our" daemon — drop it and re-resolve.
@@ -355,6 +387,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
       : 0,
     profile: active.name,
     serverUrl: data.server_url,
+    externallyManaged,
   };
 }
 
@@ -541,6 +574,15 @@ async function ensureRunningDaemonVersionMatches(): Promise<
 > {
   const active = await ensureActiveProfile();
   const running = await fetchHealthAtPort(active.port);
+
+  // Don't try to version-match a daemon we can't restart (e.g. WSL2). Treat it
+  // as up-to-date — restartDaemon would no-op anyway, and skipping here avoids
+  // a misleading "restarting daemon" log on every auto-start. #3916.
+  if (isDaemonExternallyManaged(running?.os, normalizeHostOS(process.platform))) {
+    pendingVersionRestart = false;
+    return "ok";
+  }
+
   const bundled = await getCliBinaryVersion();
   const action = decideVersionAction(bundled, running);
 
@@ -663,7 +705,10 @@ async function syncToken(
   if (userChanged) {
     try {
       const existing = await fetchHealthAtPort(active.port);
-      if (existing?.status === "running") {
+      if (daemonStatusAlive(existing?.status)) {
+        // Restart whether it's "running" or still "starting" — a booting daemon
+        // already loaded the old token at startup, so it must be restarted to
+        // pick up the rotated credentials.
         console.log(
           "[daemon] user switched — restarting daemon with new credentials",
         );
@@ -780,7 +825,10 @@ async function startDaemon(): Promise<{ success: boolean; error?: string }> {
 
   const active = await ensureActiveProfile();
   const existing = await fetchHealthAtPort(active.port);
-  if (existing?.status === "running") {
+  if (daemonStatusAlive(existing?.status)) {
+    // A daemon is already up ("running") or booting ("starting") on this port —
+    // don't spawn a second one (the CLI rejects that as "already running").
+    // Let polling track it through to "running".
     pollOnce();
     return { success: true };
   }
@@ -798,7 +846,7 @@ async function startDaemon(): Promise<{ success: boolean; error?: string }> {
     execFile(
       bin,
       args,
-      { timeout: 20_000, env: desktopSpawnEnv() },
+      { timeout: DAEMON_START_EXEC_TIMEOUT_MS, env: desktopSpawnEnv() },
       (err) => {
         if (err) {
           currentState = "stopped";
@@ -816,7 +864,32 @@ async function startDaemon(): Promise<{ success: boolean; error?: string }> {
   });
 }
 
+/**
+ * Fresh boundary preflight for stop/restart: read the active profile's CURRENT
+ * /health and decide whether the daemon runs somewhere the app can't drive
+ * (WSL2 etc.). Done per call rather than off the poll cache, so a lifecycle op
+ * never shells out to a CLI that can't reach the daemon's process — even on
+ * paths that didn't just poll (e.g. restart-on-user-switch in syncToken, which
+ * calls restartDaemon directly). See #3916.
+ */
+async function lifecycleBlockedByForeignDaemon(): Promise<boolean> {
+  const active = await ensureActiveProfile();
+  return daemonLifecycleUnreachable(
+    async () => (await fetchHealthAtPort(active.port))?.os,
+    normalizeHostOS(process.platform),
+  );
+}
+
 async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
+  // Central lifecycle guard: a daemon running in an environment we can't drive
+  // (e.g. Linux in WSL2 behind a Windows desktop) can't be stopped by the
+  // native CLI — it would act on the host process namespace and no-op, while
+  // still flipping our state to "stopped". Bail as a successful no-op so every
+  // caller (logout, quit, restart, the Runtime card) is covered in one place
+  // rather than each remembering to check. Preflighted against live /health so
+  // it holds even when no poll ran first. #3916.
+  if (await lifecycleBlockedByForeignDaemon()) return { success: true };
+
   const bin = await resolveCliBinary();
   if (!bin) return { success: false, error: "multica CLI is not installed" };
 
@@ -843,6 +916,11 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
 }
 
 async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
+  // Same central, live-preflighted guard as stopDaemon: we can neither stop nor
+  // start a daemon we don't manage, so don't try (user-switch, reauth,
+  // first-workspace, and any future restart caller all route through here).
+  // #3916.
+  if (await lifecycleBlockedByForeignDaemon()) return { success: true };
   const stopResult = await stopDaemon();
   if (!stopResult.success) return stopResult;
   return startDaemon();
@@ -1090,6 +1168,8 @@ export function setupDaemonManager(
         isQuitting = true;
         event.preventDefault();
         try {
+          // stopDaemon no-ops for an externally-managed daemon (WSL2 etc.), so
+          // this is safe and instant in that case — the guard lives there. #3916
           await stopDaemon();
         } catch {
           // Best-effort stop on quit

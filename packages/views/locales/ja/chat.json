@@ -10,7 +10,9 @@
     "placeholder_named": "{{name}} にメッセージ…",
     "placeholder_default": "メッセージを入力…",
     "send_tooltip": "送信",
-    "stop_tooltip": "停止"
+    "stop_tooltip": "停止",
+    "send_failed_toast": "メッセージを送信できませんでした",
+    "attachment_bind_failed_toast": "メッセージは送信されましたが、ファイルを添付できませんでした。しばらくしてからもう一度お試しください。"
   },
   "message_list": {
     "show_details": "詳細を表示",

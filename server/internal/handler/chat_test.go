@@ -90,6 +90,21 @@ func TestSendChatMessage_LinksAttachments(t *testing.T) {
 	if sendResp.MessageID == "" {
 		t.Fatal("expected non-empty message_id in send response")
 	}
+	if sendResp.TaskID == "" {
+		t.Fatal("expected non-empty task_id in send response")
+	}
+
+	var messageTaskID string
+	if err := testPool.QueryRow(
+		context.Background(),
+		`SELECT COALESCE(task_id::text, '') FROM chat_message WHERE id = $1`,
+		sendResp.MessageID,
+	).Scan(&messageTaskID); err != nil {
+		t.Fatalf("query chat message task id: %v", err)
+	}
+	if messageTaskID != sendResp.TaskID {
+		t.Fatalf("chat message task_id mismatch: want %s, got %s", sendResp.TaskID, messageTaskID)
+	}
 
 	// 3. Verify the attachment row now points at the new message.
 	var dbMessageID *string
@@ -105,6 +120,81 @@ func TestSendChatMessage_LinksAttachments(t *testing.T) {
 	}
 	if *dbMessageID != sendResp.MessageID {
 		t.Fatalf("chat_message_id mismatch: want %s, got %s", sendResp.MessageID, *dbMessageID)
+	}
+}
+
+// TestSendChatMessage_LinksUnattachedAttachments verifies the new compose
+// path: upload creates a workspace-scoped unattached attachment, and chat send
+// binds it to both the session and the user message.
+func TestSendChatMessage_LinksUnattachedAttachments(t *testing.T) {
+	origStorage := testHandler.Storage
+	testHandler.Storage = &mockStorage{}
+	defer func() { testHandler.Storage = origStorage }()
+
+	agentID := createHandlerTestAgent(t, "ChatSendUnattachedAttachAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, _ := writer.CreateFormFile("file", "send-unattached.png")
+	part.Write([]byte("\x89PNG\r\n\x1a\nbytes"))
+	writer.Close()
+
+	uploadReq := httptest.NewRequest("POST", "/api/upload-file", &body)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadReq.Header.Set("X-User-ID", testUserID)
+	uploadReq.Header.Set("X-Workspace-ID", testWorkspaceID)
+
+	uploadW := httptest.NewRecorder()
+	testHandler.UploadFile(uploadW, uploadReq)
+	if uploadW.Code != http.StatusOK {
+		t.Fatalf("upload precondition: %d %s", uploadW.Code, uploadW.Body.String())
+	}
+	var uploadResp AttachmentResponse
+	if err := json.Unmarshal(uploadW.Body.Bytes(), &uploadResp); err != nil {
+		t.Fatalf("decode upload: %v", err)
+	}
+	attachmentID := uploadResp.ID
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM attachment WHERE id = $1`, attachmentID)
+	})
+	if uploadResp.ChatSessionID != nil {
+		t.Fatalf("pre-send chat_session_id should be nil, got %v", *uploadResp.ChatSessionID)
+	}
+	if uploadResp.ChatMessageID != nil {
+		t.Fatalf("pre-send chat_message_id should be nil, got %v", *uploadResp.ChatMessageID)
+	}
+
+	sendReq := newRequest("POST", "/api/chat-sessions/"+sessionID+"/messages", map[string]any{
+		"content":        "look at this ![](" + uploadResp.MarkdownURL + ")",
+		"attachment_ids": []string{attachmentID},
+	})
+	sendReq = withURLParam(sendReq, "sessionId", sessionID)
+	sendReq = withChatTestWorkspaceCtx(t, sendReq)
+	sendW := httptest.NewRecorder()
+	testHandler.SendChatMessage(sendW, sendReq)
+	if sendW.Code != http.StatusCreated {
+		t.Fatalf("SendChatMessage: expected 201, got %d: %s", sendW.Code, sendW.Body.String())
+	}
+
+	var sendResp SendChatMessageResponse
+	if err := json.Unmarshal(sendW.Body.Bytes(), &sendResp); err != nil {
+		t.Fatalf("decode send: %v", err)
+	}
+
+	var dbSessionID, dbMessageID *string
+	if err := testPool.QueryRow(
+		context.Background(),
+		`SELECT chat_session_id::text, chat_message_id::text FROM attachment WHERE id = $1`,
+		attachmentID,
+	).Scan(&dbSessionID, &dbMessageID); err != nil {
+		t.Fatalf("query attachment: %v", err)
+	}
+	if dbSessionID == nil || *dbSessionID != sessionID {
+		t.Fatalf("chat_session_id mismatch: want %s, got %v", sessionID, dbSessionID)
+	}
+	if dbMessageID == nil || *dbMessageID != sendResp.MessageID {
+		t.Fatalf("chat_message_id mismatch: want %s, got %v", sendResp.MessageID, dbMessageID)
 	}
 }
 

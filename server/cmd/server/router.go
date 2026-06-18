@@ -168,6 +168,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	}
 	if opts.DaemonWakeup != nil {
 		h.TaskService.Wakeup = opts.DaemonWakeup
+		if notifier, ok := opts.DaemonWakeup.(handler.RuntimeProfileRefreshNotifier); ok {
+			h.DaemonProfileRefresh = notifier
+		}
 	}
 	if rdb != nil {
 		h.UpdateStore = handler.NewRedisUpdateStore(rdb)
@@ -209,10 +212,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// real Lark traffic can point MULTICA_LARK_HTTP_BASE_URL
 				// at a mock server.
 				//
-				// MULTICA_LARK_HTTP_BASE_URL overrides the default
-				// open.feishu.cn host (set to https://open.larksuite.com
-				// for the Lark international tenant, or to a mock for
-				// integration tests).
+				// MULTICA_LARK_HTTP_BASE_URL is an OPTIONAL deployment-wide
+				// override. Normal operation leaves it empty: each call then
+				// resolves its open-platform host from the installation's
+				// region (open.feishu.cn vs open.larksuite.com), so one
+				// deployment serves both clouds. Set it only to force every
+				// installation onto one host — a proxy, a mock for tests, or
+				// a single-cloud staging setup.
 				larkClient := lark.NewHTTPAPIClient(lark.HTTPClientConfig{
 					BaseURL: strings.TrimSpace(os.Getenv("MULTICA_LARK_HTTP_BASE_URL")),
 					Logger:  slog.Default(),
@@ -220,6 +226,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				h.LarkAPIClient = larkClient
 				patcher := lark.NewPatcher(queries, installSvc, larkClient, lark.PatcherConfig{})
 				patcher.Register(bus)
+
+				// Typing indicator: shows a "processing" reaction on the user's
+				// message while the agent is working, then removes it before the
+				// reply is sent. Best-effort; failures are logged only.
+				typingIndicator := lark.NewTypingIndicatorManager(larkClient, installSvc, queries, slog.Default())
+				patcher.SetTypingIndicatorManager(typingIndicator)
 
 				// Inbound pipeline: lark_inbound_audit logger,
 				// channel-aware ChatSessionService, and the
@@ -260,6 +272,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// "noop" so operators can spot it.
 				connectorFactory, connectorLabel := buildLarkConnectorFactory(installSvc, larkClient)
 				h.LarkHub = lark.NewHub(queries, connectorFactory, dispatcher, lark.HubConfig{})
+				h.LarkHub.SetTypingIndicatorManager(typingIndicator)
 
 				// OutcomeReplier wires the outbound side of the
 				// EventEmitter contract: NeedsBinding / AgentOffline /
@@ -295,6 +308,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// on a fresh deployment and exit. MUL-2671.
 				go lark.BackfillBotUnionIDs(context.Background(), queries, larkClient, installSvc, slog.Default())
 
+				// Upgrade repair for deployments that ran the whole
+				// integration against Lark international via the deployment-
+				// wide base-URL override before per-installation region
+				// existed: migration 116 backfilled their rows to 'feishu',
+				// so relabel them to 'lark' (their true cloud) before the
+				// operator clears the override. No-op on mainland / fresh
+				// deployments. Off the hot startup path like the union_id
+				// backfill. MUL-3083.
+				go lark.BackfillRegionFromLegacyOverride(context.Background(), queries,
+					strings.TrimSpace(os.Getenv("MULTICA_LARK_HTTP_BASE_URL")),
+					strings.TrimSpace(os.Getenv("MULTICA_LARK_CALLBACK_BASE_URL")),
+					slog.Default())
+
 				// Device-flow registration service: end-to-end install
 				// pipeline that talks to accounts.feishu.cn (RFC 8628)
 				// for the QR-scan handshake and then commits the
@@ -319,6 +345,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				if rerr != nil {
 					slog.Error("lark: RegistrationService init failed; install disabled", "error", rerr)
 				} else {
+					// Publish lark_installation:created at row-commit time so the
+					// connection badge refreshes on every workspace client, not just
+					// the tab that polls the install status to success.
+					regSvc.SetEventBus(bus)
 					h.LarkRegistration = regSvc
 					slog.Info("lark device-flow install enabled")
 				}
@@ -378,6 +408,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	// Share allowed origins with WebSocket origin checker.
 	realtime.SetAllowedOrigins(origins)
+
+	// Share the same trusted-proxy CIDRs (MULTICA_TRUSTED_PROXIES) so the
+	// WebSocket origin check honors X-Forwarded-Host only from trusted proxies,
+	// using one config source instead of a parallel one.
+	realtime.SetTrustedProxies(signupConfig.TrustedProxies)
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   origins,
@@ -467,6 +502,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/heartbeat", h.DaemonHeartbeat)
 		r.Get("/ws", h.DaemonWebSocket)
 		r.Get("/workspaces/{workspaceId}/repos", h.GetDaemonWorkspaceRepos)
+		r.Get("/workspaces/{workspaceId}/runtime-profiles", h.DaemonListRuntimeProfiles)
 
 		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
 		r.Get("/runtimes/{runtimeId}/tasks/pending", h.ListPendingTasksByRuntime)
@@ -517,6 +553,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
 
+		// Attachment download — user-scoped (auth-only), NOT
+		// workspace-scoped. The handler self-resolves the workspace
+		// from the attachment row and enforces membership inside, so
+		// this route is callable as a native browser <img>/<video>
+		// src that cannot attach X-Workspace-Slug / X-Workspace-ID
+		// headers. Persisting `/api/attachments/<id>/download` into
+		// comment markdown depends on this — see MUL-3130. The
+		// metadata / delete endpoints below stay workspace-scoped
+		// because they are JSON-API consumers that always have
+		// workspace context.
+		r.Get("/api/attachments/{id}/download", h.DownloadAttachment)
+
 		r.Route("/api/workspaces", func(r chi.Router) {
 			r.Get("/", h.ListWorkspaces)
 			r.Post("/", h.CreateWorkspace)
@@ -533,6 +581,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// the handler strips the management handle and adds a
 					// can_manage hint so the UI can gate connect/disconnect.
 					r.Get("/github/installations", h.ListGitHubInstallations)
+					// Custom runtime profiles — listing/reading is member-visible
+					// (the Runtime page renders for everyone; create/edit/delete
+					// are admin-gated below).
+					r.Get("/runtime-profiles", h.ListRuntimeProfiles)
+					r.Get("/runtime-profiles/{profileId}", h.GetRuntimeProfile)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -547,6 +600,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 						r.Delete("/", h.DeleteMember)
 					})
 					r.Delete("/invitations/{invitationId}", h.RevokeInvitation)
+					// Custom runtime profile mutations (admin-only).
+					r.Post("/runtime-profiles", h.CreateRuntimeProfile)
+					r.Patch("/runtime-profiles/{profileId}", h.UpdateRuntimeProfile)
+					r.Put("/runtime-profiles/{profileId}", h.UpdateRuntimeProfile)
+					r.Delete("/runtime-profiles/{profileId}", h.DeleteRuntimeProfile)
 				})
 				// Owner-only access
 				r.With(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner")).Delete("/", h.DeleteWorkspace)
@@ -664,6 +722,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/", h.GetIssue)
 					r.Put("/", h.UpdateIssue)
 					r.Delete("/", h.DeleteIssue)
+					r.Post("/comments/trigger-preview", h.PreviewCommentTriggers)
 					r.Post("/comments", h.CreateComment)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
@@ -772,7 +831,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Attachments
 			r.Get("/api/attachments/{id}", h.GetAttachmentByID)
-			r.Get("/api/attachments/{id}/download", h.DownloadAttachment)
+			// /api/attachments/{id}/download is registered in the
+			// outer Auth-only group above so it can be loaded as a
+			// native <img>/<video> src without workspace headers
+			// (MUL-3130). The handler self-resolves the workspace
+			// from the attachment row.
 			r.Get("/api/attachments/{id}/content", h.GetAttachmentContent)
 			r.Delete("/api/attachments/{id}", h.DeleteAttachment)
 
@@ -980,17 +1043,22 @@ func buildLarkConnectorFactory(installSvc *lark.InstallationService, apiClient l
 		creds := lark.InstallationCredentials{
 			AppID:     inst.AppID,
 			AppSecret: secret,
+			Region:    lark.RegionOrDefault(inst.Region),
 		}
 		if inst.TenantKey.Valid {
 			creds.TenantKey = inst.TenantKey.String
 		}
 		return creds, nil
 	})
-	// Inbound enricher: expands quoted replies / forwarded bundles into
-	// the agent's body via the IM API before dispatch. It shares the
+	// Inbound enricher: expands quoted replies / forwarded bundles AND
+	// prefetches a window of surrounding group history (MUL-3084) into the
+	// agent's body via the IM API before dispatch. It shares the
 	// connector's resolved credentials and runs under the connector's
 	// EnrichTimeout so it cannot overrun the Lark long-conn ACK budget.
-	enricher := lark.NewInboundEnricher(apiClient, lark.InboundEnricherConfig{Logger: slog.Default()})
+	enricher := lark.NewInboundEnricher(apiClient, lark.InboundEnricherConfig{
+		RecentContextSize: lark.DefaultRecentContextSize,
+		Logger:            slog.Default(),
+	})
 	conn, err := lark.NewWSLongConnConnector(lark.WSConnectorConfig{
 		Dialer:              dialer,
 		EndpointFetcher:     endpointFetcher,
