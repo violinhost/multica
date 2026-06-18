@@ -28,8 +28,8 @@ type Step = "instructions" | "success";
 // Velafi (2026-05-15): short Velafi-hosted install URL. Caddy /install
 // route 302-redirects to upstream install script. See multica-web-entry.Caddyfile.
 const INSTALL_CMD = "curl -sSL https://multica.velafi.ai/install | sh";
-const CLOUD_SERVER_URL = "https://api.multica.ai";
-const CLOUD_APP_URL = "https://multica.ai";
+const CLOUD_SERVER_URL = "https://api.multica.velafi.ai";
+const CLOUD_APP_URL = "https://multica.velafi.ai";
 
 function normalizeCommandURL(url: string | undefined) {
   return url?.trim().replace(/\/+$/, "") ?? "";
