@@ -2,6 +2,7 @@ package lark
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -82,4 +83,54 @@ func TestSelectInboxNotificationBinding_VelafiHybrid(t *testing.T) {
 			t.Fatalf("want no send when nothing matches and no fallback")
 		}
 	})
+}
+
+// velafi-lark-inbox-pack: card body shows comment/mention text (resolved from
+// the comment table) and the issue description as fallback, not just a title.
+func TestInboxNotificationMarkdown_BodySources(t *testing.T) {
+	agentType := "agent"
+
+	t.Run("mention markup is flattened to @Name", func(t *testing.T) {
+		raw := "[@Violin](mention://member/abc) Weekly report: 12 done, 3 in review."
+		got := cleanInboxMentions(raw)
+		if want := "@Violin Weekly report: 12 done, 3 in review."; got != want {
+			t.Fatalf("want %q, got %q", want, got)
+		}
+		if strings.Contains(got, "mention://") {
+			t.Fatalf("mention markup should be flattened, got %q", got)
+		}
+	})
+
+	t.Run("mentioned shows comment text", func(t *testing.T) {
+		item := inboxNotificationItem{Type: "mentioned", ActorType: &agentType}
+		got := inboxNotificationMarkdown(item, "@Violin Weekly report ready")
+		if !strings.Contains(got, "@Violin Weekly report ready") || !strings.Contains(got, "mentioned you") {
+			t.Fatalf("want comment text under mention header, got %q", got)
+		}
+	})
+
+	t.Run("new_comment shows comment text", func(t *testing.T) {
+		item := inboxNotificationItem{Type: "new_comment", ActorType: &agentType}
+		if got := inboxNotificationMarkdown(item, "hello world"); !strings.Contains(got, "hello world") {
+			t.Fatalf("want comment text, got %q", got)
+		}
+	})
+
+	t.Run("no comment text → empty, caller falls back to description", func(t *testing.T) {
+		item := inboxNotificationItem{Type: "mentioned"}
+		if got := inboxNotificationMarkdown(item, ""); got != "" {
+			t.Fatalf("want empty so caller uses description fallback, got %q", got)
+		}
+	})
+}
+
+func TestInboxIssueDescription_Fallback(t *testing.T) {
+	d := "Run the weekly workspace report skill for the last 7 days."
+	issue := &db.Issue{Description: pgtype.Text{String: d, Valid: true}}
+	if got := inboxIssueDescription(issue); got != d {
+		t.Fatalf("want description, got %q", got)
+	}
+	if got := inboxIssueDescription(nil); got != "" {
+		t.Fatalf("nil issue want empty, got %q", got)
+	}
 }

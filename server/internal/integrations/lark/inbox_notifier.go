@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,9 @@ const inboxNotifierFallbackAgentSettingKey = "lark_inbox_notifier_fallback_agent
 type InboxNotifierQueries interface {
 	DeleteLarkInboxNotificationDelivery(ctx context.Context, arg db.DeleteLarkInboxNotificationDeliveryParams) error
 	GetIssue(ctx context.Context, id pgtype.UUID) (db.Issue, error)
+	// velafi-lark-inbox-pack: resolve the comment referenced by a
+	// new_comment / mentioned inbox event so the card can show its text.
+	GetComment(ctx context.Context, id pgtype.UUID) (db.Comment, error)
 	GetNotificationPreference(ctx context.Context, arg db.GetNotificationPreferenceParams) (db.NotificationPreference, error)
 	GetWorkspace(ctx context.Context, id pgtype.UUID) (db.Workspace, error)
 	ClaimLarkInboxNotificationDelivery(ctx context.Context, arg db.ClaimLarkInboxNotificationDeliveryParams) (bool, error)
@@ -330,12 +334,15 @@ func (n *InboxNotifier) renderInboxNotificationCard(ctx context.Context, workspa
 	issue, workspace := n.inboxNotificationContext(ctx, workspaceID, item)
 	identifier := inboxIssueIdentifier(issue, workspace)
 	headerTitle := inboxNotificationHeaderTitle(identifier, item.Title)
-	bodyMD := inboxNotificationMarkdown(item)
+	// velafi-lark-inbox-pack: comment / @mention events keep their text in the
+	// comment table (the inbox row's body is empty), so resolve it here.
+	commentText := n.inboxCommentText(ctx, item)
+	bodyMD := inboxNotificationMarkdown(item, commentText)
 	if bodyMD == "" {
 		// velafi-lark-inbox-pack: events that carry no body of their own
-		// (assignment, @mention, autopilot creation) would otherwise render
-		// as a bare title. Fall back to the issue's own description so the
-		// card shows the actual content, not just the headline.
+		// (assignment, autopilot creation) would otherwise render as a bare
+		// title. Fall back to the issue's own description so the card shows
+		// the actual content, not just the headline.
 		bodyMD = inboxIssueDescription(issue)
 	}
 	if bodyMD == "" {
@@ -424,9 +431,12 @@ func inboxNotificationHeaderTitle(identifier, title string) string {
 	return truncateRunes(title, 80)
 }
 
-func inboxNotificationMarkdown(item inboxNotificationItem) string {
-	body := ""
-	if item.Body != nil {
+func inboxNotificationMarkdown(item inboxNotificationItem, commentText string) string {
+	// velafi-lark-inbox-pack: prefer the resolved comment text (comment /
+	// @mention events store their content in the comment table, not the inbox
+	// row body); fall back to the inbox row body for everything else.
+	body := strings.TrimSpace(commentText)
+	if body == "" && item.Body != nil {
 		body = strings.TrimSpace(*item.Body)
 	}
 	switch item.Type {
@@ -435,6 +445,12 @@ func inboxNotificationMarkdown(item inboxNotificationItem) string {
 			return ""
 		}
 		return fmt.Sprintf("**%s commented**\n\n%s", inboxActorLabel(item), truncateRunes(body, 700))
+	case "mentioned":
+		// velafi-lark-inbox-pack: show the comment text the mention lives in.
+		if body == "" {
+			return ""
+		}
+		return fmt.Sprintf("**%s mentioned you**\n\n%s", inboxActorLabel(item), truncateRunes(body, 700))
 	case "status_changed":
 		from, to := inboxStatusChange(item)
 		if from != "" || to != "" {
@@ -454,6 +470,39 @@ func inboxNotificationMarkdown(item inboxNotificationItem) string {
 		}
 		return ""
 	}
+}
+
+// inboxMentionMarkup matches Multica's `[@Name](mention://...)` comment markup
+// so it can be flattened to a readable `@Name` in the Lark card.
+var inboxMentionMarkup = regexp.MustCompile(`\[@([^\]]+)\]\(mention://[^)]+\)`)
+
+func cleanInboxMentions(s string) string {
+	return inboxMentionMarkup.ReplaceAllString(s, "@$1")
+}
+
+// inboxCommentText resolves the comment a new_comment / mentioned event points
+// at (its id lives in the inbox row's details JSON) and returns its text with
+// mention markup flattened. Returns "" on any miss — best-effort, the caller
+// falls back to the issue description. velafi-lark-inbox-pack.
+func (n *InboxNotifier) inboxCommentText(ctx context.Context, item inboxNotificationItem) string {
+	if len(item.Details) == 0 {
+		return ""
+	}
+	var d struct {
+		CommentID string `json:"comment_id"`
+	}
+	if err := json.Unmarshal(item.Details, &d); err != nil || d.CommentID == "" {
+		return ""
+	}
+	id, err := scanUUID(d.CommentID)
+	if err != nil {
+		return ""
+	}
+	c, err := n.queries.GetComment(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return cleanInboxMentions(c.Content)
 }
 
 // inboxIssueDescription returns the issue's own description, trimmed and
