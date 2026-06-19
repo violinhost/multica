@@ -37,7 +37,14 @@ import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { memberListOptions } from "@multica/core/workspace/queries";
 import { useActorName } from "@multica/core/workspace/hooks";
-import { larkInstallationsOptions, larkKeys } from "@multica/core/lark";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@multica/ui/components/ui/select";
+import { larkInstallationsOptions, larkInboxNotifierOptions, larkKeys } from "@multica/core/lark";
 import { api, ApiError } from "@multica/core/api";
 import type { LarkInstallation, LarkInstallStatusResponse } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -179,6 +186,15 @@ export function LarkTab() {
         </section>
       )}
 
+      {/* velafi-lark-inbox-pack: fallback inbox-notifier agent selector. */}
+      {configured && installations.length > 0 ? (
+        <InboxNotifierSection
+          wsId={wsId}
+          installations={installations}
+          canManage={canManage}
+        />
+      ) : null}
+
       <AlertDialog
         open={!!disconnectTarget}
         onOpenChange={(v) => {
@@ -207,6 +223,85 @@ export function LarkTab() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// velafi-lark-inbox-pack: picks the workspace fallback inbox-notifier agent.
+// Inbox events are DM'd by the involved agent's own bot when possible; this
+// fallback agent's bot delivers events with no agent bot (e.g. human→human
+// @mentions). Owner/admin editable; others see it read-only. Candidates are
+// the agents that already have a bot installation.
+function InboxNotifierSection({
+  wsId,
+  installations,
+  canManage,
+}: {
+  wsId: string;
+  installations: LarkInstallation[];
+  canManage: boolean;
+}) {
+  const qc = useQueryClient();
+  const { getAgentName } = useActorName();
+  const { data } = useQuery(larkInboxNotifierOptions(wsId));
+  const [saving, setSaving] = useState(false);
+
+  const agentIds = Array.from(new Set(installations.map((i) => i.agent_id)));
+  const current = data?.fallback_agent_id ?? "";
+
+  async function save(value: string | null) {
+    const next = !value || value === "none" ? "" : value;
+    setSaving(true);
+    try {
+      await api.setLarkInboxNotifier(wsId, next);
+      await qc.invalidateQueries({ queryKey: larkKeys.inboxNotifier(wsId) });
+      toast.success("Inbox-notifier agent updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update inbox-notifier agent");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold">Inbox notifications</h2>
+      <Card>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Inbox events (assignments, status changes, comments, @mentions, agent
+            activity) are delivered as a Lark DM. The agent involved notifies via its
+            own bot when possible; the fallback agent below delivers events that have
+            no agent bot (for example a teammate @mentioning you). Members only receive
+            DMs from a bot they have linked their account to.
+          </p>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium">Fallback notifier agent</span>
+            <Select
+              value={current === "" ? "none" : current}
+              onValueChange={save}
+              disabled={!canManage || saving}
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="None (no fallback)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (no fallback)</SelectItem>
+                {agentIds.map((id) => (
+                  <SelectItem key={id} value={id}>
+                    {getAgentName(id)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {!canManage ? (
+            <p className="text-xs text-muted-foreground">
+              Only workspace owners and admins can change this.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 

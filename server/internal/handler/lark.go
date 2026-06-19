@@ -263,6 +263,112 @@ func (h *Handler) sendLarkBindingConfirmation(ctx context.Context, redeemed lark
 	}
 }
 
+// larkInboxNotifierFallbackAgentSettingKey mirrors the lark package's
+// settings key (velafi-lark-inbox-pack). Kept as a literal here to avoid a
+// handler→lark import just for a constant.
+const larkInboxNotifierFallbackAgentSettingKey = "lark_inbox_notifier_fallback_agent_id"
+
+func larkInboxNotifierFallbackAgentID(settings []byte) string {
+	if len(settings) == 0 {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal(settings, &m); err != nil {
+		return ""
+	}
+	s, _ := m[larkInboxNotifierFallbackAgentSettingKey].(string)
+	return s
+}
+
+// GetLarkInboxNotifier returns the workspace's configured fallback inbox-
+// notifier agent. velafi-lark-inbox-pack. Member-visible (the Integrations
+// tab renders for non-admins, same rationale as installations listing).
+func (h *Handler) GetLarkInboxNotifier(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	ws, err := h.Queries.GetWorkspace(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load workspace")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"fallback_agent_id": larkInboxNotifierFallbackAgentID(ws.Settings),
+	})
+}
+
+// SetLarkInboxNotifier sets (or clears, when empty) the fallback inbox-notifier
+// agent. velafi-lark-inbox-pack. Owner/admin only (gated at the route). A
+// non-empty agent must have an active bot installation in this workspace.
+func (h *Handler) SetLarkInboxNotifier(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	var req struct {
+		FallbackAgentID string `json:"fallback_agent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	agentID := strings.TrimSpace(req.FallbackAgentID)
+	if agentID != "" {
+		if h.LarkInstallations == nil {
+			writeError(w, http.StatusBadRequest, "lark integration not configured")
+			return
+		}
+		agentUUID, ok := parseUUIDOrBadRequest(w, agentID, "fallback_agent_id")
+		if !ok {
+			return
+		}
+		rows, err := h.LarkInstallations.ListByWorkspace(r.Context(), wsUUID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to verify agent installation")
+			return
+		}
+		found := false
+		for _, row := range rows {
+			if row.AgentID == agentUUID && row.Status == "active" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, "selected agent has no active Lark bot installation")
+			return
+		}
+	}
+	ws, err := h.Queries.GetWorkspace(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load workspace")
+		return
+	}
+	settings := map[string]any{}
+	if len(ws.Settings) > 0 {
+		_ = json.Unmarshal(ws.Settings, &settings)
+	}
+	if agentID == "" {
+		delete(settings, larkInboxNotifierFallbackAgentSettingKey)
+	} else {
+		settings[larkInboxNotifierFallbackAgentSettingKey] = agentID
+	}
+	merged, err := json.Marshal(settings)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encode settings")
+		return
+	}
+	if err := h.Queries.UpdateWorkspaceSettings(r.Context(), db.UpdateWorkspaceSettingsParams{
+		ID:       wsUUID,
+		Settings: merged,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"fallback_agent_id": agentID})
+}
+
 // BeginLarkInstallResponse is the payload the QR-code dialog consumes.
 // The frontend renders `qr_code_url` as a QR image (and as a tap-to-
 // open link fallback) and starts polling

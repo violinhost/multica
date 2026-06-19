@@ -30,6 +30,11 @@ type APIClient interface {
 	// target the same card.
 	SendInteractiveCard(ctx context.Context, p SendCardParams) (string, error)
 
+	// SendDirectInteractiveCard posts an interactive card directly to a
+	// user's open_id (not a chat). velafi-lark-inbox-pack (backport #3919):
+	// used by the inbox notifier to DM a bound member.
+	SendDirectInteractiveCard(ctx context.Context, p SendDirectCardParams) (string, error)
+
 	// PatchInteractiveCard replaces the body of a previously-sent card.
 	// The throttling decision belongs to the caller; this method just
 	// performs the network call.
@@ -206,6 +211,16 @@ type SendCardParams struct {
 	CardJSON string
 }
 
+// SendDirectCardParams is the open_id variant of SendCardParams: post an
+// interactive card directly to a user (not a chat). velafi-lark-inbox-pack
+// (backport #3919) — the inbox notifier DMs the recipient by their bound
+// open_id rather than a chat_id.
+type SendDirectCardParams struct {
+	InstallationID InstallationCredentials
+	OpenID         OpenID
+	CardJSON       string
+}
+
 // PatchCardParams is the input shape for updating an existing card.
 type PatchCardParams struct {
 	InstallationID    InstallationCredentials
@@ -323,6 +338,11 @@ func (s *stubAPIClient) IsConfigured() bool { return false }
 
 func (s *stubAPIClient) SendInteractiveCard(ctx context.Context, p SendCardParams) (string, error) {
 	s.log.Warn("lark stub client: SendInteractiveCard called", "chat_id", string(p.ChatID))
+	return "", ErrAPIClientNotConfigured
+}
+
+func (s *stubAPIClient) SendDirectInteractiveCard(ctx context.Context, p SendDirectCardParams) (string, error) {
+	s.log.Warn("lark stub client: SendDirectInteractiveCard called", "open_id", string(p.OpenID))
 	return "", ErrAPIClientNotConfigured
 }
 

@@ -40,6 +40,15 @@ func (s *stubAPIClientWithRecorder) SendInteractiveCard(ctx context.Context, p S
 	return "lark-msg-id", nil
 }
 
+func (s *stubAPIClientWithRecorder) SendDirectInteractiveCard(ctx context.Context, p SendDirectCardParams) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sendErr != nil {
+		return "", s.sendErr
+	}
+	return "lark-msg-id", nil
+}
+
 func (s *stubAPIClientWithRecorder) PatchInteractiveCard(ctx context.Context, p PatchCardParams) error {
 	return nil
 }

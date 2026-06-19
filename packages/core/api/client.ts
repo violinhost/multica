@@ -2250,6 +2250,21 @@ export class ApiClient {
     });
   }
 
+  // velafi-lark-inbox-pack: workspace fallback inbox-notifier agent.
+  async getLarkInboxNotifier(workspaceId: string): Promise<{ fallback_agent_id: string }> {
+    return this.fetch(`/api/workspaces/${workspaceId}/lark/inbox-notifier`);
+  }
+
+  async setLarkInboxNotifier(
+    workspaceId: string,
+    fallbackAgentId: string,
+  ): Promise<{ fallback_agent_id: string }> {
+    return this.fetch(`/api/workspaces/${workspaceId}/lark/inbox-notifier`, {
+      method: "PUT",
+      body: JSON.stringify({ fallback_agent_id: fallbackAgentId }),
+    });
+  }
+
   async redeemLarkBindingToken(token: string): Promise<RedeemLarkBindingTokenResponse> {
     return this.fetch(`/api/lark/binding/redeem`, {
       method: "POST",

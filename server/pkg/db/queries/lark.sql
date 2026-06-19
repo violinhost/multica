@@ -405,3 +405,38 @@ RETURNING *;
 -- handles dedup can sweep these too.
 DELETE FROM lark_binding_token
 WHERE expires_at < $1;
+
+-- velafi-lark-inbox-pack (backport #3919): inbox-notification delivery path.
+-- name: ListActiveLarkUserBindingsByMember :many
+-- Outbound notification path: find the recipient's bound Lark accounts in
+-- this workspace, with the active bot installation needed for credentials.
+SELECT sqlc.embed(lub), sqlc.embed(li)
+FROM lark_user_binding lub
+JOIN lark_installation li ON li.id = lub.installation_id
+WHERE lub.workspace_id = $1
+  AND lub.multica_user_id = $2
+  AND li.workspace_id = lub.workspace_id
+  AND li.status = 'active'
+ORDER BY lub.bound_at DESC;
+
+-- name: ClaimLarkInboxNotificationDelivery :one
+-- Claims one outbound Lark inbox notification delivery. This is intentionally
+-- keyed by the durable inbox_item row plus the concrete bot installation and
+-- recipient open_id so repeated inbox:new events, duplicate bus subscribers,
+-- or multi-replica handling cannot send duplicate DMs.
+WITH ins AS (
+    INSERT INTO lark_inbox_notification_delivery (
+        inbox_item_id,
+        installation_id,
+        lark_open_id
+    ) VALUES ($1, $2, $3)
+    ON CONFLICT DO NOTHING
+    RETURNING true AS claimed
+)
+SELECT COALESCE((SELECT claimed FROM ins), false)::boolean AS claimed;
+
+-- name: DeleteLarkInboxNotificationDelivery :exec
+DELETE FROM lark_inbox_notification_delivery
+WHERE inbox_item_id = $1
+  AND installation_id = $2
+  AND lark_open_id = $3;

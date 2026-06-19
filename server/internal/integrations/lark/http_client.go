@@ -269,6 +269,48 @@ func (c *httpAPIClient) SendInteractiveCard(ctx context.Context, p SendCardParam
 	return resp.Data.MessageID, nil
 }
 
+// SendDirectInteractiveCard posts an interactive card directly to a user's
+// open_id (not a chat). velafi-lark-inbox-pack (backport #3919): the inbox
+// notifier DMs a bound member. Mirrors SendInteractiveCard but with
+// receive_id_type=open_id.
+func (c *httpAPIClient) SendDirectInteractiveCard(ctx context.Context, p SendDirectCardParams) (string, error) {
+	if p.OpenID == "" {
+		return "", errors.New("lark http client: missing open_id")
+	}
+	if p.CardJSON == "" {
+		return "", errors.New("lark http client: missing card json")
+	}
+	token, err := c.tenantAccessToken(ctx, p.InstallationID)
+	if err != nil {
+		return "", err
+	}
+	q := url.Values{}
+	q.Set("receive_id_type", "open_id")
+	body := map[string]string{
+		"receive_id": string(p.OpenID),
+		"msg_type":   "interactive",
+		"content":    p.CardJSON,
+	}
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			MessageID string `json:"message_id"`
+		} `json:"data"`
+	}
+	path := "/open-apis/im/v1/messages?" + q.Encode()
+	if err := c.doJSON(ctx, c.resolveBaseURL(p.InstallationID), http.MethodPost, path, token, body, &resp); err != nil {
+		return "", fmt.Errorf("lark http client: send direct interactive card: %w", err)
+	}
+	if resp.Code != 0 || resp.Data.MessageID == "" {
+		if isTokenError(resp.Code) {
+			c.invalidateToken(p.InstallationID.AppID)
+		}
+		return "", fmt.Errorf("lark http client: send direct interactive card: code=%d msg=%q", resp.Code, resp.Msg)
+	}
+	return resp.Data.MessageID, nil
+}
+
 // SendTextMessage posts a plain text IM message into a Lark chat.
 // This is the Patcher's primary outbound for agent chat replies —
 // using a normal text bubble instead of an interactive card makes

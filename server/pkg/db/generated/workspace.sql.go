@@ -222,3 +222,19 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 	)
 	return i, err
 }
+
+const updateWorkspaceSettings = `-- name: UpdateWorkspaceSettings :exec
+UPDATE workspace SET settings = $2, updated_at = now() WHERE id = $1
+`
+
+type UpdateWorkspaceSettingsParams struct {
+	ID       pgtype.UUID `json:"id"`
+	Settings []byte      `json:"settings"`
+}
+
+// velafi-lark-inbox-pack: settings-only update so a single settings key can be
+// merged without round-tripping every workspace column (clobber-safe).
+func (q *Queries) UpdateWorkspaceSettings(ctx context.Context, arg UpdateWorkspaceSettingsParams) error {
+	_, err := q.db.Exec(ctx, updateWorkspaceSettings, arg.ID, arg.Settings)
+	return err
+}

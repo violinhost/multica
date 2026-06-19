@@ -227,6 +227,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				patcher := lark.NewPatcher(queries, installSvc, larkClient, lark.PatcherConfig{})
 				patcher.Register(bus)
 
+				// velafi-lark-inbox-pack (backport #3919): DM inbox
+				// notifications (assignments/status/comments/@mentions/agent
+				// activity) to members bound to the relevant agent's bot, with
+				// a workspace-configured fallback agent for events with no
+				// agent bot. Best-effort; subscribes to inbox:new.
+				inboxNotifier := lark.NewInboxNotifier(queries, installSvc, larkClient, lark.InboxNotifierConfig{
+					Logger:    slog.Default(),
+					PublicURL: strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")), "/"),
+				})
+				inboxNotifier.Register(bus)
+
 				// Typing indicator: shows a "processing" reaction on the user's
 				// message while the agent is working, then removes it before the
 				// reply is sent. Best-effort; failures are logged only.
@@ -627,10 +638,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/lark/installations", h.ListLarkInstallations)
+					// velafi-lark-inbox-pack: read fallback inbox-notifier agent.
+					r.Get("/lark/inbox-notifier", h.GetLarkInboxNotifier)
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Delete("/lark/installations/{installationId}", h.RevokeLarkInstallation)
+					// velafi-lark-inbox-pack: set/clear fallback inbox-notifier agent.
+					r.Put("/lark/inbox-notifier", h.SetLarkInboxNotifier)
 					// Device-flow scan-to-install. Begin opens a new
 					// registration session against Lark and returns
 					// the QR-code URL; the frontend dialog then polls

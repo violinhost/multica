@@ -7,11 +7,21 @@ import { api } from "../api";
 export const larkKeys = {
   all: (wsId: string) => ["lark", wsId] as const,
   installations: (wsId: string) => [...larkKeys.all(wsId), "installations"] as const,
+  // velafi-lark-inbox-pack: fallback inbox-notifier agent setting.
+  inboxNotifier: (wsId: string) => [...larkKeys.all(wsId), "inbox-notifier"] as const,
 };
 
 export const larkInstallationsOptions = (wsId: string) =>
   queryOptions({
     queryKey: larkKeys.installations(wsId),
     queryFn: () => api.listLarkInstallations(wsId),
+    enabled: !!wsId,
+  });
+
+// velafi-lark-inbox-pack: current workspace fallback inbox-notifier agent.
+export const larkInboxNotifierOptions = (wsId: string) =>
+  queryOptions({
+    queryKey: larkKeys.inboxNotifier(wsId),
+    queryFn: () => api.getLarkInboxNotifier(wsId),
     enabled: !!wsId,
   });

@@ -43,3 +43,8 @@ WITH deleted_pending_check_suites AS (
     DELETE FROM github_pending_check_suite WHERE workspace_id = $1
 )
 DELETE FROM workspace WHERE id = $1;
+
+-- velafi-lark-inbox-pack: settings-only update so a single settings key can be
+-- merged without round-tripping every workspace column (clobber-safe).
+-- name: UpdateWorkspaceSettings :exec
+UPDATE workspace SET settings = $2, updated_at = now() WHERE id = $1;
