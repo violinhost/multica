@@ -362,7 +362,11 @@ func (n *InboxNotifier) renderInboxNotificationCard(ctx context.Context, workspa
 					map[string]any{
 						"tag":  "button",
 						"text": map[string]any{"tag": "plain_text", "content": "View in Multica"},
-						"url":  issueURL,
+						// velafi-lark-inbox-pack: wrap in a larksuite applink so the
+						// deep link opens INSIDE the Lark client webview (desktop +
+						// mobile) instead of bouncing to an external browser. Same
+						// technique as the bind-card button (velafi-lark-ux-pack).
+						"url":  larkWebviewURL(issueURL),
 						"type": "primary",
 					},
 				},
