@@ -332,6 +332,13 @@ func (n *InboxNotifier) renderInboxNotificationCard(ctx context.Context, workspa
 	headerTitle := inboxNotificationHeaderTitle(identifier, item.Title)
 	bodyMD := inboxNotificationMarkdown(item)
 	if bodyMD == "" {
+		// velafi-lark-inbox-pack: events that carry no body of their own
+		// (assignment, @mention, autopilot creation) would otherwise render
+		// as a bare title. Fall back to the issue's own description so the
+		// card shows the actual content, not just the headline.
+		bodyMD = inboxIssueDescription(issue)
+	}
+	if bodyMD == "" {
 		bodyMD = headerTitle
 	}
 	card := map[string]any{
@@ -447,6 +454,16 @@ func inboxNotificationMarkdown(item inboxNotificationItem) string {
 		}
 		return ""
 	}
+}
+
+// inboxIssueDescription returns the issue's own description, trimmed and
+// truncated, for use as the card body when the inbox event carries no body
+// of its own. velafi-lark-inbox-pack.
+func inboxIssueDescription(issue *db.Issue) string {
+	if issue == nil || !issue.Description.Valid {
+		return ""
+	}
+	return truncateRunes(strings.TrimSpace(issue.Description.String), 700)
 }
 
 func inboxNotificationTemplate(item inboxNotificationItem) string {
