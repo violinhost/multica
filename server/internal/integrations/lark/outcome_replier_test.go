@@ -68,6 +68,16 @@ func (s *stubAPIClientWithRecorder) SendBindingPromptCard(ctx context.Context, p
 	return nil
 }
 
+func (s *stubAPIClientWithRecorder) SendBindingConfirmationCard(ctx context.Context, p BindingPromptParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.bindingErr != nil {
+		return s.bindingErr
+	}
+	s.bindingCalls = append(s.bindingCalls, p)
+	return nil
+}
+
 func (s *stubAPIClientWithRecorder) GetBotInfo(ctx context.Context, creds InstallationCredentials) (BotInfo, error) {
 	return BotInfo{}, nil
 }

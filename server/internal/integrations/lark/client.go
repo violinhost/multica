@@ -60,6 +60,12 @@ type APIClient interface {
 	// Lark's card schema.
 	SendBindingPromptCard(ctx context.Context, p BindingPromptParams) error
 
+	// SendBindingConfirmationCard posts the post-bind "you're all set"
+	// card to the user's open_id. velafi-lark-ux-pack(#4): sent after a
+	// successful redemption so the user gets closure in-chat (upstream
+	// leaves the prompt card untouched). Best-effort at the call site.
+	SendBindingConfirmationCard(ctx context.Context, p BindingPromptParams) error
+
 	// GetBotInfo returns the Bot's per-installation `open_id` (the
 	// `bot_open_id` we persist on lark_installation). RegistrationService
 	// is the only caller — after the device-flow registration returns
@@ -337,6 +343,11 @@ func (s *stubAPIClient) SendMarkdownCard(ctx context.Context, p SendMarkdownCard
 
 func (s *stubAPIClient) SendBindingPromptCard(ctx context.Context, p BindingPromptParams) error {
 	s.log.Warn("lark stub client: SendBindingPromptCard called", "open_id", string(p.OpenID))
+	return ErrAPIClientNotConfigured
+}
+
+func (s *stubAPIClient) SendBindingConfirmationCard(ctx context.Context, p BindingPromptParams) error {
+	s.log.Warn("lark stub client: SendBindingConfirmationCard called", "open_id", string(p.OpenID))
 	return ErrAPIClientNotConfigured
 }
 

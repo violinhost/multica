@@ -10,8 +10,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -138,10 +138,10 @@ func (f *HTTPConnectionTokenFetcher) Endpoint(ctx context.Context, creds Install
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	// Locale header is sent verbatim by the SDK — Lark uses it for the
-	// error `msg` field (Chinese vs English). We pick zh because that's
-	// the audience Multica server logs are read by today; if i18n
-	// matters later this becomes an env or a per-installation knob.
-	req.Header.Set("locale", "zh")
+	// error `msg` field (Chinese vs English). velafi-lark-ux-pack(#2):
+	// en so protocol error msgs match the English UI surfaces; retire if
+	// upstream makes this an env / per-installation knob.
+	req.Header.Set("locale", "en")
 	resp, err := f.cfg.HTTPClient.Do(req)
 	if err != nil {
 		return WSEndpoint{}, fmt.Errorf("http do: %w", err)

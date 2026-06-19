@@ -465,6 +465,47 @@ func (c *httpAPIClient) SendBindingPromptCard(ctx context.Context, p BindingProm
 	return nil
 }
 
+// SendBindingConfirmationCard posts the post-bind confirmation card to
+// the user's open_id. velafi-lark-ux-pack(#4); mirrors the send path of
+// SendBindingPromptCard but renders the confirmation template and needs
+// no BindURL. Best-effort: callers log on error and never fail the
+// redemption itself.
+func (c *httpAPIClient) SendBindingConfirmationCard(ctx context.Context, p BindingPromptParams) error {
+	if p.OpenID == "" {
+		return errors.New("lark http client: missing open_id")
+	}
+	cardJSON, err := bindingConfirmationTemplate()
+	if err != nil {
+		return fmt.Errorf("lark http client: render binding confirmation: %w", err)
+	}
+	token, err := c.tenantAccessToken(ctx, p.InstallationID)
+	if err != nil {
+		return err
+	}
+	q := url.Values{}
+	q.Set("receive_id_type", "open_id")
+	body := map[string]string{
+		"receive_id": string(p.OpenID),
+		"msg_type":   "interactive",
+		"content":    cardJSON,
+	}
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	path := "/open-apis/im/v1/messages?" + q.Encode()
+	if err := c.doJSON(ctx, c.resolveBaseURL(p.InstallationID), http.MethodPost, path, token, body, &resp); err != nil {
+		return fmt.Errorf("lark http client: send binding confirmation: %w", err)
+	}
+	if resp.Code != 0 {
+		if isTokenError(resp.Code) {
+			c.invalidateToken(p.InstallationID.AppID)
+		}
+		return fmt.Errorf("lark http client: send binding confirmation: code=%d msg=%q", resp.Code, resp.Msg)
+	}
+	return nil
+}
+
 // GetBotInfo calls /open-apis/bot/v3/info to learn the Bot's
 // per-installation `open_id` and then /open-apis/contact/v3/users/
 // {open_id}?user_id_type=open_id to resolve its stable `union_id`.
@@ -921,9 +962,48 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
+// larkWebviewURL wraps an absolute https target in a Lark applink so a
+// card button opens it INSIDE the Lark client's webview (desktop and
+// mobile) instead of handing it to an external system browser. This is
+// velafi-lark-ux-pack(#3): the deployment is international (larksuite),
+// so the applink host is applink.larksuite.com; mainland Feishu would
+// use applink.feishu.cn. Retire if upstream opens bind URLs in-app.
+func larkWebviewURL(target string) string {
+	return "https://applink.larksuite.com/client/web_url/open?mode=window&url=" + url.QueryEscape(target)
+}
+
+// bindingConfirmationTemplate renders the post-bind "you're all set"
+// card pushed to the user after a successful redemption. This is
+// velafi-lark-ux-pack(#4): upstream leaves the original prompt card
+// untouched after binding (no done/green state, button stays tappable),
+// so we send a fresh confirmation so the user gets clear closure in the
+// chat. No CTA. Retire when upstream patches the prompt card in place.
+func bindingConfirmationTemplate() (string, error) {
+	doc := map[string]any{
+		"config": map[string]any{"wide_screen_mode": true},
+		"header": map[string]any{
+			"template": "green",
+			"title":    map[string]any{"tag": "plain_text", "content": "Multica"},
+		},
+		"elements": []any{
+			map[string]any{
+				"tag": "div",
+				"text": map[string]any{
+					"tag":     "lark_md",
+					"content": "✅ Your Multica account is linked. Your next message here goes straight to the Agent.",
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // bindingPromptTemplate renders the "you need to bind" interactive
-// card. Single primary CTA pointing at the redemption URL; the rest
-// of the body is plain-text Chinese copy matching the in-app voice.
+// card. Single primary CTA pointing at the redemption URL.
 //
 // Kept here (not in defaultRenderer) so the binding card template can
 // evolve independently of the streaming-status cards the Patcher
@@ -940,8 +1020,10 @@ func bindingPromptTemplate(bindURL string) (string, error) {
 			map[string]any{
 				"tag": "div",
 				"text": map[string]any{
-					"tag":     "lark_md",
-					"content": "你还没有绑定 Multica 账户。点击下方按钮完成绑定后即可使用此 Agent。",
+					"tag": "lark_md",
+					// velafi-lark-ux-pack(#2 i18n): English copy. Upstream
+					// hardcodes Chinese here. Retire when upstream localizes.
+					"content": "Your Multica account isn't linked yet. Tap the button below to finish linking, then you can use this Agent.",
 				},
 			},
 			map[string]any{
@@ -949,9 +1031,12 @@ func bindingPromptTemplate(bindURL string) (string, error) {
 				"actions": []any{
 					map[string]any{
 						"tag":  "button",
-						"text": map[string]any{"tag": "plain_text", "content": "去绑定"},
+						"text": map[string]any{"tag": "plain_text", "content": "Link account"},
 						"type": "primary",
-						"url":  bindURL,
+						// velafi-lark-ux-pack(#3 in-app webview): open the bind
+						// page INSIDE the Lark client webview via an applink,
+						// not an external browser. Retire when upstream wraps it.
+						"url": larkWebviewURL(bindURL),
 					},
 				},
 			},

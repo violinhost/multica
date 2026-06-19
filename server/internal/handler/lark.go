@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -216,11 +218,49 @@ func (h *Handler) RedeemLarkBindingToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// velafi-lark-ux-pack(#4): push a confirmation card to the user so
+	// the bind has visible closure in the Lark chat — upstream leaves the
+	// prompt card untouched (no done state, button stays tappable).
+	// Best-effort: never fails the redemption. Retire when upstream
+	// patches the prompt card in place after binding.
+	h.sendLarkBindingConfirmation(r.Context(), redeemed)
+
 	writeJSON(w, http.StatusOK, RedeemLarkBindingTokenResponse{
 		WorkspaceID:    uuidToString(redeemed.WorkspaceID),
 		InstallationID: uuidToString(redeemed.InstallationID),
 		LarkOpenID:     string(redeemed.LarkOpenID),
 	})
+}
+
+// sendLarkBindingConfirmation posts the post-bind confirmation card to
+// the just-bound user. velafi-lark-ux-pack(#4). Best-effort: any failure
+// is logged and swallowed so it never affects the redemption response.
+func (h *Handler) sendLarkBindingConfirmation(ctx context.Context, redeemed lark.RedeemedBindingToken) {
+	if h.LarkInstallations == nil || h.LarkAPIClient == nil {
+		return
+	}
+	inst, err := h.LarkInstallations.GetInWorkspace(ctx, redeemed.InstallationID, redeemed.WorkspaceID)
+	if err != nil {
+		slog.Warn("lark: skip binding confirmation card; installation lookup failed", "error", err)
+		return
+	}
+	secret, err := h.LarkInstallations.DecryptAppSecret(inst)
+	if err != nil {
+		slog.Warn("lark: skip binding confirmation card; decrypt app_secret failed", "error", err)
+		return
+	}
+	creds := lark.InstallationCredentials{
+		AppID:     inst.AppID,
+		AppSecret: secret,
+		TenantKey: inst.TenantKey.String,
+		Region:    lark.Region(inst.Region),
+	}
+	if err := h.LarkAPIClient.SendBindingConfirmationCard(ctx, lark.BindingPromptParams{
+		InstallationID: creds,
+		OpenID:         redeemed.LarkOpenID,
+	}); err != nil {
+		slog.Warn("lark: binding confirmation card send failed", "error", err)
+	}
 }
 
 // BeginLarkInstallResponse is the payload the QR-code dialog consumes.

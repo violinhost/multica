@@ -754,11 +754,16 @@ func TestHTTPClient_SendBindingPromptCard_HappyPath(t *testing.T) {
 	if capturedBody["receive_id"] != "ou_user_1" {
 		t.Errorf("receive_id: got %q", capturedBody["receive_id"])
 	}
-	if !strings.Contains(capturedBody["content"], "multica.test/lark/bind") {
-		t.Errorf("binding card should embed BindURL: %q", capturedBody["content"])
+	// velafi-lark-ux-pack(#2/#3): the BindURL is embedded percent-encoded
+	// inside a larksuite applink (in-app webview), and the CTA is English.
+	if !strings.Contains(capturedBody["content"], "applink.larksuite.com") {
+		t.Errorf("binding card button should be a larksuite applink: %q", capturedBody["content"])
 	}
-	if !strings.Contains(capturedBody["content"], "去绑定") {
-		t.Errorf("binding card should carry the localized CTA: %q", capturedBody["content"])
+	if !strings.Contains(capturedBody["content"], "multica.test%2Flark%2Fbind") {
+		t.Errorf("binding card should embed BindURL (percent-encoded): %q", capturedBody["content"])
+	}
+	if !strings.Contains(capturedBody["content"], "Link account") {
+		t.Errorf("binding card should carry the English CTA: %q", capturedBody["content"])
 	}
 }
 
@@ -1148,8 +1153,10 @@ func TestBindingPromptTemplate_Shape(t *testing.T) {
 		t.Fatalf("no actions in card")
 	}
 	btn, _ := actions[0].(map[string]any)
-	if btn["url"] != "https://multica.test/bind?token=abc" {
-		t.Errorf("button url: got %v", btn["url"])
+	// velafi-lark-ux-pack(#3): the button opens the bind URL inside the
+	// Lark webview via a larksuite applink wrapper, not the raw URL.
+	if want := larkWebviewURL("https://multica.test/bind?token=abc"); btn["url"] != want {
+		t.Errorf("button url: got %v want %v", btn["url"], want)
 	}
 }
 
