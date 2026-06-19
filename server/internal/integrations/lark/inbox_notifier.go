@@ -35,6 +35,10 @@ type InboxNotifierQueries interface {
 	GetNotificationPreference(ctx context.Context, arg db.GetNotificationPreferenceParams) (db.NotificationPreference, error)
 	GetWorkspace(ctx context.Context, id pgtype.UUID) (db.Workspace, error)
 	ClaimLarkInboxNotificationDelivery(ctx context.Context, arg db.ClaimLarkInboxNotificationDeliveryParams) (bool, error)
+	// velafi-lark-inbox-pack: per-comment delivery claim, collapses the
+	// mentioned + new_comment pair for one comment into a single card.
+	ClaimLarkInboxCommentDelivery(ctx context.Context, arg db.ClaimLarkInboxCommentDeliveryParams) (bool, error)
+	DeleteLarkInboxCommentDelivery(ctx context.Context, arg db.DeleteLarkInboxCommentDeliveryParams) error
 	ListActiveLarkUserBindingsByMember(ctx context.Context, arg db.ListActiveLarkUserBindingsByMemberParams) ([]db.ListActiveLarkUserBindingsByMemberRow, error)
 }
 
@@ -129,30 +133,26 @@ func (n *InboxNotifier) notify(ctx context.Context, payload any) error {
 	if !ok {
 		return nil
 	}
-	claimed, err := n.queries.ClaimLarkInboxNotificationDelivery(ctx, db.ClaimLarkInboxNotificationDeliveryParams{
-		InboxItemID:    itemID,
-		InstallationID: row.LarkInstallation.ID,
-		LarkOpenID:     row.LarkUserBinding.LarkOpenID,
-	})
+	// velafi-lark-inbox-pack: dedup the delivery. For comment-anchored events
+	// (a single @mention comment makes multica emit BOTH a `mentioned` and a
+	// `new_comment` inbox item for the same recipient) claim PER COMMENT so
+	// only one card goes out; for everything else keep the per-inbox-item
+	// ledger. Either claim is race-safe via its table PK.
+	claimed, release, err := n.claimDelivery(ctx, item, itemID, row.LarkInstallation.ID, row.LarkUserBinding.LarkOpenID)
 	if err != nil {
-		return fmt.Errorf("claim lark inbox notification delivery: %w", err)
+		return err
 	}
 	if !claimed {
 		return nil
 	}
-	claimArg := db.DeleteLarkInboxNotificationDeliveryParams{
-		InboxItemID:    itemID,
-		InstallationID: row.LarkInstallation.ID,
-		LarkOpenID:     row.LarkUserBinding.LarkOpenID,
-	}
 	creds, err := n.installationCredentials(row.LarkInstallation)
 	if err != nil {
-		n.releaseDeliveryClaim(claimArg)
+		release()
 		return err
 	}
 	cardJSON, err := n.renderInboxNotificationCard(ctx, workspaceID, item)
 	if err != nil {
-		n.releaseDeliveryClaim(claimArg)
+		release()
 		return fmt.Errorf("render inbox card: %w", err)
 	}
 	if _, err := n.client.SendDirectInteractiveCard(ctx, SendDirectCardParams{
@@ -160,7 +160,7 @@ func (n *InboxNotifier) notify(ctx context.Context, payload any) error {
 		OpenID:         OpenID(row.LarkUserBinding.LarkOpenID),
 		CardJSON:       cardJSON,
 	}); err != nil {
-		n.releaseDeliveryClaim(claimArg)
+		release()
 		return fmt.Errorf("send inbox dm: %w", err)
 	}
 	return nil
@@ -484,18 +484,28 @@ func cleanInboxMentions(s string) string {
 // at (its id lives in the inbox row's details JSON) and returns its text with
 // mention markup flattened. Returns "" on any miss — best-effort, the caller
 // falls back to the issue description. velafi-lark-inbox-pack.
-func (n *InboxNotifier) inboxCommentText(ctx context.Context, item inboxNotificationItem) string {
+// commentIDFromDetails extracts the comment this inbox event points at, if any
+// (its id lives in the inbox row's details JSON). velafi-lark-inbox-pack.
+func commentIDFromDetails(item inboxNotificationItem) (pgtype.UUID, bool) {
 	if len(item.Details) == 0 {
-		return ""
+		return pgtype.UUID{}, false
 	}
 	var d struct {
 		CommentID string `json:"comment_id"`
 	}
 	if err := json.Unmarshal(item.Details, &d); err != nil || d.CommentID == "" {
-		return ""
+		return pgtype.UUID{}, false
 	}
 	id, err := scanUUID(d.CommentID)
 	if err != nil {
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
+func (n *InboxNotifier) inboxCommentText(ctx context.Context, item inboxNotificationItem) string {
+	id, ok := commentIDFromDetails(item)
+	if !ok {
 		return ""
 	}
 	c, err := n.queries.GetComment(ctx, id)
@@ -503,6 +513,54 @@ func (n *InboxNotifier) inboxCommentText(ctx context.Context, item inboxNotifica
 		return ""
 	}
 	return cleanInboxMentions(c.Content)
+}
+
+// claimDelivery reserves one delivery so concurrent or duplicate events don't
+// double-send. Comment-anchored events (the mentioned + new_comment pair for a
+// single comment) claim per comment so they collapse to one card; everything
+// else claims per inbox item. Both claims are race-safe via their table PK.
+// Returns claimed=false when another event already won the claim. The returned
+// func releases the claim (call only on a post-claim failure).
+// velafi-lark-inbox-pack.
+func (n *InboxNotifier) claimDelivery(ctx context.Context, item inboxNotificationItem, itemID, installationID pgtype.UUID, openID string) (bool, func(), error) {
+	if commentID, ok := commentIDFromDetails(item); ok {
+		claimed, err := n.queries.ClaimLarkInboxCommentDelivery(ctx, db.ClaimLarkInboxCommentDeliveryParams{
+			CommentID:      commentID,
+			InstallationID: installationID,
+			LarkOpenID:     openID,
+		})
+		if err != nil {
+			return false, func() {}, fmt.Errorf("claim lark inbox comment delivery: %w", err)
+		}
+		arg := db.DeleteLarkInboxCommentDeliveryParams{
+			CommentID:      commentID,
+			InstallationID: installationID,
+			LarkOpenID:     openID,
+		}
+		return claimed, func() { n.releaseCommentDeliveryClaim(arg) }, nil
+	}
+	claimed, err := n.queries.ClaimLarkInboxNotificationDelivery(ctx, db.ClaimLarkInboxNotificationDeliveryParams{
+		InboxItemID:    itemID,
+		InstallationID: installationID,
+		LarkOpenID:     openID,
+	})
+	if err != nil {
+		return false, func() {}, fmt.Errorf("claim lark inbox notification delivery: %w", err)
+	}
+	arg := db.DeleteLarkInboxNotificationDeliveryParams{
+		InboxItemID:    itemID,
+		InstallationID: installationID,
+		LarkOpenID:     openID,
+	}
+	return claimed, func() { n.releaseDeliveryClaim(arg) }, nil
+}
+
+func (n *InboxNotifier) releaseCommentDeliveryClaim(arg db.DeleteLarkInboxCommentDeliveryParams) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := n.queries.DeleteLarkInboxCommentDelivery(ctx, arg); err != nil {
+		n.log.Warn("lark inbox notifier: release comment delivery claim failed", "err", err.Error())
+	}
 }
 
 // inboxIssueDescription returns the issue's own description, trimmed and

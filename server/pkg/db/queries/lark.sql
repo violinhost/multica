@@ -440,3 +440,26 @@ DELETE FROM lark_inbox_notification_delivery
 WHERE inbox_item_id = $1
   AND installation_id = $2
   AND lark_open_id = $3;
+
+-- name: ClaimLarkInboxCommentDelivery :one
+-- velafi-lark-inbox-pack: claims ONE Lark card per comment + installation +
+-- recipient, collapsing the `mentioned` + `new_comment` inbox-item pair multica
+-- emits for a single @mention comment into a single delivery. Race-safe via PK.
+WITH ins AS (
+    INSERT INTO lark_inbox_comment_delivery (
+        comment_id,
+        installation_id,
+        lark_open_id
+    ) VALUES ($1, $2, $3)
+    ON CONFLICT DO NOTHING
+    RETURNING true AS claimed
+)
+SELECT COALESCE((SELECT claimed FROM ins), false)::boolean AS claimed;
+
+-- name: DeleteLarkInboxCommentDelivery :exec
+-- velafi-lark-inbox-pack: releases a comment-delivery claim when the send
+-- fails, so a later retry can re-claim.
+DELETE FROM lark_inbox_comment_delivery
+WHERE comment_id = $1
+  AND installation_id = $2
+  AND lark_open_id = $3;

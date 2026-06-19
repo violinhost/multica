@@ -479,6 +479,13 @@ type LarkInboundMessageDedup struct {
 	ClaimToken     pgtype.UUID        `json:"claim_token"`
 }
 
+type LarkInboxCommentDelivery struct {
+	CommentID      pgtype.UUID        `json:"comment_id"`
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	LarkOpenID     string             `json:"lark_open_id"`
+	ClaimedAt      pgtype.Timestamptz `json:"claimed_at"`
+}
+
 type LarkInboxNotificationDelivery struct {
 	InboxItemID    pgtype.UUID        `json:"inbox_item_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
