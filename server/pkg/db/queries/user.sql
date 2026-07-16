@@ -27,6 +27,13 @@ UPDATE "user" SET
 WHERE id = $1
 RETURNING *;
 
+-- name: GetUsersByIDs :many
+-- Batch lookup from the GLOBAL user table (not gated on membership, so departed
+-- members still render). Used to enrich attribution initiator / originator refs on
+-- task responses without an N+1 (MUL-4302 §9). Returns only the display fields.
+SELECT id, name, email, avatar_url FROM "user"
+WHERE id = ANY(@ids::uuid[]);
+
 -- name: CreateUser :one
 INSERT INTO "user" (name, email, avatar_url)
 VALUES ($1, $2, $3)

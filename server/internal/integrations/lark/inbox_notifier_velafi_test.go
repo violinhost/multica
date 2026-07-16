@@ -23,8 +23,8 @@ func uuidFor(t *testing.T, s string) pgtype.UUID {
 
 func bindingRowFor(t *testing.T, agentID, openID string) db.ListActiveLarkUserBindingsByMemberRow {
 	return db.ListActiveLarkUserBindingsByMemberRow{
-		LarkUserBinding: db.LarkUserBinding{LarkOpenID: openID},
-		LarkInstallation: db.LarkInstallation{
+		ChannelUserBinding: db.ChannelUserBinding{ChannelUserID: openID},
+		ChannelInstallation: db.ChannelInstallation{
 			ID:      uuidFor(t, "11111111-1111-1111-1111-111111111111"),
 			AgentID: uuidFor(t, agentID),
 		},
@@ -45,8 +45,8 @@ func TestSelectInboxNotificationBinding_VelafiHybrid(t *testing.T) {
 		}
 		item := inboxNotificationItem{ActorType: &agentType, ActorID: &agentA}
 		row, ok := selectInboxNotificationBinding(ctx, nil, rows, item, uuidFor(t, fallback))
-		if !ok || row.LarkUserBinding.LarkOpenID != "ou_a" {
-			t.Fatalf("want actor agent A (ou_a), got ok=%v open=%q", ok, row.LarkUserBinding.LarkOpenID)
+		if !ok || row.ChannelUserBinding.ChannelUserID != "ou_a" {
+			t.Fatalf("want actor agent A (ou_a), got ok=%v open=%q", ok, row.ChannelUserBinding.ChannelUserID)
 		}
 	})
 
@@ -57,8 +57,8 @@ func TestSelectInboxNotificationBinding_VelafiHybrid(t *testing.T) {
 		// Human actor, no issue → only the fallback can deliver.
 		item := inboxNotificationItem{Type: "mentioned"}
 		row, ok := selectInboxNotificationBinding(ctx, nil, rows, item, uuidFor(t, fallback))
-		if !ok || row.LarkUserBinding.LarkOpenID != "ou_f" {
-			t.Fatalf("want fallback (ou_f), got ok=%v open=%q", ok, row.LarkUserBinding.LarkOpenID)
+		if !ok || row.ChannelUserBinding.ChannelUserID != "ou_f" {
+			t.Fatalf("want fallback (ou_f), got ok=%v open=%q", ok, row.ChannelUserBinding.ChannelUserID)
 		}
 	})
 
@@ -69,8 +69,8 @@ func TestSelectInboxNotificationBinding_VelafiHybrid(t *testing.T) {
 		}
 		item := inboxNotificationItem{ActorType: &agentType, ActorID: &agentB}
 		row, ok := selectInboxNotificationBinding(ctx, nil, rows, item, uuidFor(t, fallback))
-		if !ok || row.LarkUserBinding.LarkOpenID != "ou_f" {
-			t.Fatalf("want fallback (ou_f), got ok=%v open=%q", ok, row.LarkUserBinding.LarkOpenID)
+		if !ok || row.ChannelUserBinding.ChannelUserID != "ou_f" {
+			t.Fatalf("want fallback (ou_f), got ok=%v open=%q", ok, row.ChannelUserBinding.ChannelUserID)
 		}
 	})
 

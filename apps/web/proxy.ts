@@ -13,12 +13,14 @@ const LEGACY_ROUTE_SEGMENTS = new Set([
   "issues",
   "projects",
   "agents",
+  "squads",
   "inbox",
   "my-issues",
   "autopilots",
   "runtimes",
   "skills",
   "settings",
+  "usage",
 ]);
 
 function resolveLocale(req: NextRequest): string {
@@ -73,6 +75,10 @@ export function proxy(req: NextRequest) {
   }
 
   // --- Root path: login-first contract for unauthenticated users ---
+  // velafi is a private self-host with no public marketing site, so root
+  // always routes into the app (logged-in) or to /login (anonymous). We do
+  // NOT adopt upstream's isOfficialMarketingHost guard (multica.ai marketing
+  // passthrough) — it does not apply to our hosts.
   if (pathname === "/") {
     const url = req.nextUrl.clone();
     if (hasSession && lastSlug) {

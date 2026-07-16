@@ -138,14 +138,14 @@ func (n *InboxNotifier) notify(ctx context.Context, payload any) error {
 	// `new_comment` inbox item for the same recipient) claim PER COMMENT so
 	// only one card goes out; for everything else keep the per-inbox-item
 	// ledger. Either claim is race-safe via its table PK.
-	claimed, release, err := n.claimDelivery(ctx, item, itemID, row.LarkInstallation.ID, row.LarkUserBinding.LarkOpenID)
+	claimed, release, err := n.claimDelivery(ctx, item, itemID, row.ChannelInstallation.ID, row.ChannelUserBinding.ChannelUserID)
 	if err != nil {
 		return err
 	}
 	if !claimed {
 		return nil
 	}
-	creds, err := n.installationCredentials(row.LarkInstallation)
+	creds, err := n.installationCredentials(row.ChannelInstallation)
 	if err != nil {
 		release()
 		return err
@@ -157,7 +157,7 @@ func (n *InboxNotifier) notify(ctx context.Context, payload any) error {
 	}
 	if _, err := n.client.SendDirectInteractiveCard(ctx, SendDirectCardParams{
 		InstallationID: creds,
-		OpenID:         OpenID(row.LarkUserBinding.LarkOpenID),
+		OpenID:         OpenID(row.ChannelUserBinding.ChannelUserID),
 		CardJSON:       cardJSON,
 	}); err != nil {
 		release()
@@ -174,7 +174,18 @@ func (n *InboxNotifier) releaseDeliveryClaim(arg db.DeleteLarkInboxNotificationD
 	}
 }
 
-func (n *InboxNotifier) installationCredentials(inst db.LarkInstallation) (InstallationCredentials, error) {
+func (n *InboxNotifier) installationCredentials(row db.ChannelInstallation) (InstallationCredentials, error) {
+	// v0.4.x channel generalization (MUL-3515): the velafi inbox pack now reads
+	// channel_installation directly (channel_type='feishu'). The feishu creds
+	// (app_id, app_secret_encrypted base64, tenant_key, bot_open_id, bot_union_id,
+	// region) live in the row's JSONB config; installationFromRow (store.go)
+	// decodes it into the channel-layer domain Installation and base64-decodes
+	// app_secret_encrypted, exactly as every other channel read path does.
+	// DecryptAppSecret then unseals it. velafi-lark-inbox-pack.
+	inst, err := installationFromRow(row)
+	if err != nil {
+		return InstallationCredentials{}, fmt.Errorf("decode installation config: %w", err)
+	}
 	secret, err := n.credentials.DecryptAppSecret(inst)
 	if err != nil {
 		return InstallationCredentials{}, fmt.Errorf("decrypt app_secret: %w", err)
@@ -323,7 +334,7 @@ func selectInboxNotificationBinding(ctx context.Context, queries InboxNotifierQu
 
 func selectInboxNotificationBindingByAgent(rows []db.ListActiveLarkUserBindingsByMemberRow, agentID pgtype.UUID) (db.ListActiveLarkUserBindingsByMemberRow, bool) {
 	for _, row := range rows {
-		if row.LarkInstallation.AgentID == agentID {
+		if row.ChannelInstallation.AgentID == agentID {
 			return row, true
 		}
 	}
