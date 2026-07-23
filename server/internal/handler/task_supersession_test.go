@@ -328,6 +328,7 @@ func TestRecordTrustedTaskSupersessionReceiptQuery_NormalizesDuplicateRequestIDs
 
 	audit := loadSupersessionAudit(t, taskID)
 	want := []string{commentA, commentB}
+	slices.Sort(want)
 	if !slices.Equal(audit.SupersededCommentIDs, want) {
 		t.Fatalf("normalized receipt stored ids = %v, want %v", audit.SupersededCommentIDs, want)
 	}
