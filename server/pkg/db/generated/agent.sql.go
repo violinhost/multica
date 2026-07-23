@@ -898,6 +898,7 @@ WITH queued AS (
         q.id,
         q.agent_id,
         q.issue_id,
+        q.created_at,
         q.trigger_comment_id,
         q.coalesced_comment_ids,
         q.retry_of_task_id,
@@ -4759,13 +4760,14 @@ WITH target AS (
             WHERE planned_id IS NOT NULL
         ) AS planned_comment_ids
     FROM agent_task_queue q
-    WHERE q.id = $3
+    WHERE q.id = $2
       AND q.status = 'queued'
       AND (q.trigger_comment_id IS NOT NULL OR cardinality(q.coalesced_comment_ids) > 0)
+    FOR UPDATE OF q
 ),
 requested AS (
     SELECT COALESCE(array_agg(DISTINCT requested_id ORDER BY requested_id), '{}'::uuid[]) AS normalized_requested_ids
-    FROM unnest($2::uuid[]) AS requested_id
+    FROM unnest($3::uuid[]) AS requested_id
     WHERE requested_id IS NOT NULL
 ),
 superseding AS (
@@ -4779,7 +4781,7 @@ superseding AS (
 UPDATE agent_task_queue
 SET supersession_kind = 'trusted_receipt',
     superseded_by_task_id = $1,
-    superseded_comment_ids = $2::uuid[]
+    superseded_comment_ids = r.normalized_requested_ids
 FROM target t, requested r, superseding s
 WHERE agent_task_queue.id = t.id
   AND r.normalized_requested_ids = t.planned_comment_ids
@@ -4788,8 +4790,8 @@ RETURNING t.id, t.issue_id, t.agent_id, planned_comment_ids, normalized_requeste
 
 type RecordTrustedTaskSupersessionReceiptParams struct {
 	SupersededByTaskID   pgtype.UUID   `json:"superseded_by_task_id"`
-	SupersededCommentIds []pgtype.UUID `json:"superseded_comment_ids"`
 	TaskID               pgtype.UUID   `json:"task_id"`
+	SupersededCommentIds []pgtype.UUID `json:"superseded_comment_ids"`
 }
 
 type RecordTrustedTaskSupersessionReceiptRow struct {
@@ -4856,7 +4858,7 @@ type RecordTrustedTaskSupersessionReceiptRow struct {
 // plan, but the server cannot infer it from Multica-native rows alone. The
 // claim path validates the receipt again before consuming it.
 func (q *Queries) RecordTrustedTaskSupersessionReceipt(ctx context.Context, arg RecordTrustedTaskSupersessionReceiptParams) (RecordTrustedTaskSupersessionReceiptRow, error) {
-	row := q.db.QueryRow(ctx, recordTrustedTaskSupersessionReceipt, arg.SupersededByTaskID, arg.SupersededCommentIds, arg.TaskID)
+	row := q.db.QueryRow(ctx, recordTrustedTaskSupersessionReceipt, arg.SupersededByTaskID, arg.TaskID, arg.SupersededCommentIds)
 	var i RecordTrustedTaskSupersessionReceiptRow
 	err := row.Scan(
 		&i.ID,

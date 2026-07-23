@@ -53,6 +53,29 @@ func createForeignSupersessionWorkspace(t *testing.T) (workspaceID, userID strin
 	return workspaceID, userID
 }
 
+func createPlainSupersessionWorkspaceMember(t *testing.T, slug string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	var userID string
+	email := slug + "-" + time.Now().Format("150405.000000") + "@example.test"
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
+	`, "Plain Supersession Member "+slug, email).Scan(&userID); err != nil {
+		t.Fatalf("create plain supersession user: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')
+	`, testWorkspaceID, userID); err != nil {
+		t.Fatalf("create plain supersession member: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM member WHERE user_id = $1`, userID)
+		testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, userID)
+	})
+	return userID
+}
+
 func createSupersessionReceiptFixture(t *testing.T) (runtimeID, agentID, issueID, taskID, commentA, commentB string) {
 	t.Helper()
 	ctx := context.Background()
@@ -123,6 +146,7 @@ func TestRecordTaskSupersessionReceipt_SucceedsForWorkspaceOwner(t *testing.T) {
 	got := append([]string(nil), resp.SupersededCommentIDs...)
 	slices.Sort(got)
 	want := []string{commentA, commentB}
+	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Fatalf("superseded_comment_ids = %v, want %v", got, want)
 	}
@@ -192,6 +216,123 @@ func TestRecordTrustedTaskSupersessionReceiptQuery_RejectsMutatedPlanAtomically(
 	}
 }
 
+func TestRecordTrustedTaskSupersessionReceiptQuery_RejectsConcurrentPlanMutation(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	runtimeID, agentID, issueID, taskID, commentA, commentB := createSupersessionReceiptFixture(t)
+	commentC := insertSupersessionComment(t, ctx, issueID, "receipt concurrent added scope")
+	var supersedingTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			started_at, completed_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, now() - interval '2 minutes', now() - interval '1 minute')
+		RETURNING id
+	`, agentID, runtimeID, issueID).Scan(&supersedingTaskID); err != nil {
+		t.Fatalf("insert superseding task: %v", err)
+	}
+
+	txA, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin txA: %v", err)
+	}
+	defer txA.Rollback(ctx)
+
+	var locked string
+	if err := txA.QueryRow(ctx, `SELECT id::text FROM agent_task_queue WHERE id = $1 FOR UPDATE`, taskID).Scan(&locked); err != nil {
+		t.Fatalf("lock queued task: %v", err)
+	}
+
+	type result struct {
+		err error
+	}
+	started := make(chan struct{})
+	done := make(chan result, 1)
+	go func() {
+		queryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		close(started)
+		_, qerr := testHandler.Queries.RecordTrustedTaskSupersessionReceipt(queryCtx, db.RecordTrustedTaskSupersessionReceiptParams{
+			TaskID:             parseUUID(taskID),
+			SupersededByTaskID: parseUUID(supersedingTaskID),
+			SupersededCommentIds: []pgtype.UUID{
+				parseUUID(commentA),
+				parseUUID(commentB),
+			},
+		})
+		done <- result{err: qerr}
+	}()
+
+	<-started
+	time.Sleep(150 * time.Millisecond)
+
+	if _, err := txA.Exec(ctx, `
+		UPDATE agent_task_queue
+		SET coalesced_comment_ids = array_append(coalesced_comment_ids, $2::uuid)
+		WHERE id = $1
+	`, taskID, commentC); err != nil {
+		t.Fatalf("mutate queued plan: %v", err)
+	}
+	if err := txA.Commit(ctx); err != nil {
+		t.Fatalf("commit txA: %v", err)
+	}
+
+	res := <-done
+	if !errors.Is(res.err, pgx.ErrNoRows) {
+		t.Fatalf("expected pgx.ErrNoRows after concurrent plan mutation, got %v", res.err)
+	}
+
+	audit := loadSupersessionAudit(t, taskID)
+	if audit.SupersessionKind != "" || audit.SupersededByTaskID != "" || len(audit.SupersededCommentIDs) != 0 {
+		t.Fatalf("concurrent mutation query must not write a receipt, got kind=%q task=%q ids=%v", audit.SupersessionKind, audit.SupersededByTaskID, audit.SupersededCommentIDs)
+	}
+}
+
+func TestRecordTrustedTaskSupersessionReceiptQuery_NormalizesDuplicateRequestIDs(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	runtimeID, agentID, issueID, taskID, commentA, commentB := createSupersessionReceiptFixture(t)
+	var supersedingTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			started_at, completed_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, now() - interval '2 minutes', now() - interval '1 minute')
+		RETURNING id
+	`, agentID, runtimeID, issueID).Scan(&supersedingTaskID); err != nil {
+		t.Fatalf("insert superseding task: %v", err)
+	}
+
+	_, err := testHandler.Queries.RecordTrustedTaskSupersessionReceipt(ctx, db.RecordTrustedTaskSupersessionReceiptParams{
+		TaskID:             parseUUID(taskID),
+		SupersededByTaskID: parseUUID(supersedingTaskID),
+		SupersededCommentIds: []pgtype.UUID{
+			parseUUID(commentB),
+			parseUUID(commentA),
+			parseUUID(commentA),
+			pgtype.UUID{},
+			parseUUID(commentB),
+		},
+	})
+	if err != nil {
+		t.Fatalf("record normalized receipt: %v", err)
+	}
+
+	audit := loadSupersessionAudit(t, taskID)
+	want := []string{commentA, commentB}
+	if !slices.Equal(audit.SupersededCommentIDs, want) {
+		t.Fatalf("normalized receipt stored ids = %v, want %v", audit.SupersededCommentIDs, want)
+	}
+}
+
 func TestRecordTaskSupersessionReceipt_RejectsNonTerminalSupersedingTask(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -203,9 +344,9 @@ func TestRecordTaskSupersessionReceipt_RejectsNonTerminalSupersedingTask(t *test
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id, status, priority,
-			dispatched_at
+			started_at
 		)
-		VALUES ($1, $2, $3, 'dispatched', 0, now() - interval '1 minute')
+		VALUES ($1, $2, $3, 'running', 0, now() - interval '1 minute')
 		RETURNING id
 	`, agentID, runtimeID, issueID).Scan(&supersedingTaskID); err != nil {
 		t.Fatalf("insert non-terminal task: %v", err)
@@ -324,7 +465,7 @@ func TestRecordTaskSupersessionReceipt_RejectsPlainWorkspaceMember(t *testing.T)
 	}
 	ctx := context.Background()
 
-	memberUserID := handlerWorkspaceMember(t, "supersessionMember")
+	memberUserID := createPlainSupersessionWorkspaceMember(t, "supersessionMember")
 	runtimeID, agentID, issueID, taskID, commentA, commentB := createSupersessionReceiptFixture(t)
 	var supersedingTaskID string
 	if err := testPool.QueryRow(ctx, `

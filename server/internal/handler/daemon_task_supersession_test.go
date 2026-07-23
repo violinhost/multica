@@ -58,7 +58,12 @@ func loadSupersessionAudit(t *testing.T, taskID string) supersessionAuditRow {
 			dispatched_at IS NOT NULL,
 			COALESCE(supersession_kind, ''),
 			COALESCE(superseded_by_task_id::text, ''),
-			superseded_comment_ids::text[]
+			ARRAY(
+				SELECT id::text
+				FROM unnest(superseded_comment_ids) AS id
+				WHERE id IS NOT NULL
+				ORDER BY id
+			)
 		FROM agent_task_queue
 		WHERE id = $1
 	`, taskID).Scan(

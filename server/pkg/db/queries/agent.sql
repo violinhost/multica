@@ -490,6 +490,7 @@ WITH target AS (
     WHERE q.id = @task_id
       AND q.status = 'queued'
       AND (q.trigger_comment_id IS NOT NULL OR cardinality(q.coalesced_comment_ids) > 0)
+    FOR UPDATE OF q
 ),
 requested AS (
     SELECT COALESCE(array_agg(DISTINCT requested_id ORDER BY requested_id), '{}'::uuid[]) AS normalized_requested_ids
@@ -507,7 +508,7 @@ superseding AS (
 UPDATE agent_task_queue
 SET supersession_kind = 'trusted_receipt',
     superseded_by_task_id = @superseded_by_task_id,
-    superseded_comment_ids = @superseded_comment_ids::uuid[]
+    superseded_comment_ids = r.normalized_requested_ids
 FROM target t, requested r, superseding s
 WHERE agent_task_queue.id = t.id
   AND r.normalized_requested_ids = t.planned_comment_ids
@@ -533,6 +534,7 @@ WITH queued AS (
         q.id,
         q.agent_id,
         q.issue_id,
+        q.created_at,
         q.trigger_comment_id,
         q.coalesced_comment_ids,
         q.retry_of_task_id,
