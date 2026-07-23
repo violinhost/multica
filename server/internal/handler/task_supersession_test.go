@@ -3,11 +3,16 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 func recordTaskSupersessionReceipt(t *testing.T, actorUserID, taskID string, body map[string]any) *httptest.ResponseRecorder {
@@ -153,6 +158,40 @@ func TestRecordTaskSupersessionReceipt_RejectsPartialCoverage(t *testing.T) {
 	}
 }
 
+func TestRecordTrustedTaskSupersessionReceiptQuery_RejectsMutatedPlanAtomically(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	runtimeID, agentID, issueID, taskID, commentA, _ := createSupersessionReceiptFixture(t)
+	var supersedingTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			started_at, completed_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, now() - interval '2 minutes', now() - interval '1 minute')
+		RETURNING id
+	`, agentID, runtimeID, issueID).Scan(&supersedingTaskID); err != nil {
+		t.Fatalf("insert superseding task: %v", err)
+	}
+
+	_, err := testHandler.Queries.RecordTrustedTaskSupersessionReceipt(ctx, db.RecordTrustedTaskSupersessionReceiptParams{
+		TaskID:               parseUUID(taskID),
+		SupersededByTaskID:   parseUUID(supersedingTaskID),
+		SupersededCommentIds: []pgtype.UUID{parseUUID(commentA)},
+	})
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected pgx.ErrNoRows from atomic query validation, got %v", err)
+	}
+
+	audit := loadSupersessionAudit(t, taskID)
+	if audit.SupersessionKind != "" || audit.SupersededByTaskID != "" || len(audit.SupersededCommentIDs) != 0 {
+		t.Fatalf("mutated-plan query must not write a receipt, got kind=%q task=%q ids=%v", audit.SupersessionKind, audit.SupersededByTaskID, audit.SupersededCommentIDs)
+	}
+}
+
 func TestRecordTaskSupersessionReceipt_RejectsNonTerminalSupersedingTask(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -276,5 +315,37 @@ func TestRecordTaskSupersessionReceipt_RejectsCrossAgentSupersedingTask(t *testi
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRecordTaskSupersessionReceipt_RejectsPlainWorkspaceMember(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	memberUserID := handlerWorkspaceMember(t, "supersessionMember")
+	runtimeID, agentID, issueID, taskID, commentA, commentB := createSupersessionReceiptFixture(t)
+	var supersedingTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			started_at, completed_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, now() - interval '2 minutes', now() - interval '1 minute')
+		RETURNING id
+	`, agentID, runtimeID, issueID).Scan(&supersedingTaskID); err != nil {
+		t.Fatalf("insert superseding task: %v", err)
+	}
+
+	w := recordTaskSupersessionReceipt(t, memberUserID, taskID, map[string]any{
+		"superseded_by_task_id": supersedingTaskID,
+		"superseded_comment_ids": []string{
+			commentA,
+			commentB,
+		},
+	})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
 	}
 }

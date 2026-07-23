@@ -156,7 +156,15 @@ func (h *Handler) RecordTaskSupersessionReceipt(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	resp := taskToResponse(updated, workspaceID)
+	persisted, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{
+		ID:          updated.ID,
+		WorkspaceID: workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to reload supersession receipt")
+		return
+	}
+	resp := taskToResponse(persisted, workspaceID)
 	h.hydrateTaskAttributions(r.Context(), []*TaskAttribution{resp.Attribution})
 	writeJSON(w, http.StatusOK, resp)
 }

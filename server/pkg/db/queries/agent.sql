@@ -476,12 +476,41 @@ RETURNING *;
 -- queued comment task when they can prove a historical run covered that exact
 -- plan, but the server cannot infer it from Multica-native rows alone. The
 -- claim path validates the receipt again before consuming it.
+WITH target AS (
+    SELECT
+        q.id,
+        q.issue_id,
+        q.agent_id,
+        (
+            SELECT COALESCE(array_agg(DISTINCT planned_id ORDER BY planned_id), '{}'::uuid[])
+            FROM unnest(array_append(q.coalesced_comment_ids, q.trigger_comment_id)) AS planned_id
+            WHERE planned_id IS NOT NULL
+        ) AS planned_comment_ids
+    FROM agent_task_queue q
+    WHERE q.id = @task_id
+      AND q.status = 'queued'
+      AND (q.trigger_comment_id IS NOT NULL OR cardinality(q.coalesced_comment_ids) > 0)
+),
+requested AS (
+    SELECT COALESCE(array_agg(DISTINCT requested_id ORDER BY requested_id), '{}'::uuid[]) AS normalized_requested_ids
+    FROM unnest(@superseded_comment_ids::uuid[]) AS requested_id
+    WHERE requested_id IS NOT NULL
+),
+superseding AS (
+    SELECT c.id
+    FROM agent_task_queue c
+    JOIN target t ON c.issue_id = t.issue_id AND c.agent_id = t.agent_id
+    WHERE c.id = @superseded_by_task_id
+      AND c.status = 'completed'
+      AND c.completed_at IS NOT NULL
+)
 UPDATE agent_task_queue
 SET supersession_kind = 'trusted_receipt',
     superseded_by_task_id = @superseded_by_task_id,
     superseded_comment_ids = @superseded_comment_ids::uuid[]
-WHERE id = @task_id
-  AND status = 'queued'
+FROM target t, requested r, superseding s
+WHERE agent_task_queue.id = t.id
+  AND r.normalized_requested_ids = t.planned_comment_ids
 RETURNING *;
 
 -- name: CancelSupersededQueuedCommentTasksForAgent :many
