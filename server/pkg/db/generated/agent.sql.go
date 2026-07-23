@@ -915,6 +915,7 @@ WITH queued AS (
     WHERE q.agent_id = $1
       AND q.status = 'queued'
       AND (q.trigger_comment_id IS NOT NULL OR cardinality(q.coalesced_comment_ids) > 0)
+    FOR UPDATE OF q
 ),
 trusted_receipts AS (
     SELECT

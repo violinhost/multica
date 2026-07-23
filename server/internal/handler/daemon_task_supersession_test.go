@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func insertSupersessionComment(t *testing.T, ctx context.Context, issueID, content string) string {
@@ -459,5 +460,103 @@ func TestClaimTasksByRuntime_BatchSkipsSupersededTaskAndClaimsFreshWork(t *testi
 	}
 	if !slices.Equal(obsoleteAudit.SupersededCommentIDs, covered) {
 		t.Fatalf("obsolete batch task superseded_comment_ids = %v, want %v", obsoleteAudit.SupersededCommentIDs, covered)
+	}
+}
+
+func TestCancelSupersededQueuedCommentTasksForAgent_RejectsConcurrentPlanMutation(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	runtimeID := createClaimReclaimRuntime(t, ctx, "Concurrent cancel runtime")
+	agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Concurrent cancel agent")
+	commentA := insertSupersessionComment(t, ctx, issueID, "concurrent older scope")
+	commentB := insertSupersessionComment(t, ctx, issueID, "concurrent newer scope")
+	commentC := insertSupersessionComment(t, ctx, issueID, "concurrent latest scope")
+
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			delivered_comment_ids, started_at, completed_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, ARRAY[$4::uuid, $5::uuid], now() - interval '2 minutes', now() - interval '1 minute')
+		RETURNING id
+	`, agentID, runtimeID, issueID, commentA, commentB).Scan(new(string)); err != nil {
+		t.Fatalf("insert superseding completed task: %v", err)
+	}
+
+	var queuedTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			trigger_comment_id, coalesced_comment_ids
+		)
+		VALUES ($1, $2, $3, 'queued', 10, $4, ARRAY[$5::uuid])
+		RETURNING id
+	`, agentID, runtimeID, issueID, commentB, commentA).Scan(&queuedTaskID); err != nil {
+		t.Fatalf("insert queued direct-delivery task: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+	})
+
+	txA, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin txA: %v", err)
+	}
+	defer txA.Rollback(ctx)
+
+	var locked string
+	if err := txA.QueryRow(ctx, `SELECT id::text FROM agent_task_queue WHERE id = $1 FOR UPDATE`, queuedTaskID).Scan(&locked); err != nil {
+		t.Fatalf("lock queued row: %v", err)
+	}
+
+	type result struct {
+		rows int
+		err  error
+	}
+	started := make(chan struct{})
+	done := make(chan result, 1)
+	go func() {
+		queryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		close(started)
+		rows, qerr := testHandler.Queries.CancelSupersededQueuedCommentTasksForAgent(queryCtx, parseUUID(agentID))
+		done <- result{rows: len(rows), err: qerr}
+	}()
+
+	<-started
+	time.Sleep(150 * time.Millisecond)
+
+	if _, err := txA.Exec(ctx, `
+		UPDATE agent_task_queue
+		SET coalesced_comment_ids = ARRAY[$2::uuid, $3::uuid],
+		    trigger_comment_id = $4::uuid
+		WHERE id = $1
+	`, queuedTaskID, commentA, commentB, commentC); err != nil {
+		t.Fatalf("mutate queued plan: %v", err)
+	}
+	if err := txA.Commit(ctx); err != nil {
+		t.Fatalf("commit txA: %v", err)
+	}
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("cancel superseded queued tasks: %v", res.err)
+	}
+	if res.rows != 0 {
+		t.Fatalf("expected no cancelled rows after concurrent plan mutation, got %d", res.rows)
+	}
+
+	audit := loadSupersessionAudit(t, queuedTaskID)
+	if audit.Status != "queued" {
+		t.Fatalf("queued task status = %s, want queued", audit.Status)
+	}
+	if audit.Dispatched {
+		t.Fatal("queued task was dispatched while asserting cancellation race")
+	}
+	if audit.SupersessionKind != "" || audit.SupersededByTaskID != "" || len(audit.SupersededCommentIDs) != 0 {
+		t.Fatalf("concurrent mutation must leave no cancellation audit, got kind=%q task=%q ids=%v", audit.SupersessionKind, audit.SupersededByTaskID, audit.SupersededCommentIDs)
 	}
 }
