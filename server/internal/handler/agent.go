@@ -315,6 +315,9 @@ type AgentTaskResponse struct {
 	CoalescedCommentIDs      []string               `json:"coalesced_comment_ids,omitempty"`       // MUL-4195: earlier comments folded into this run when it had not yet started, so a single run still covers every deliberate comment; trigger_comment_id is the newest. Surfaced so the UI can show which comments a run covered. omitempty so old clients ignore it
 	CoalescedComments        []CoalescedCommentData `json:"coalesced_comments,omitempty"`          // MUL-4195: full detail (thread_id/author/created_at/content) of the folded comments, so the daemon prompt can address each without assuming they share the triggering thread. omitempty so old clients ignore it
 	DeliveredCommentIDs      []string               `json:"delivered_comment_ids"`                 // always present: [] is an authoritative empty receipt, while field absence identifies responses from legacy servers
+	SupersessionKind         string                 `json:"supersession_kind,omitempty"`           // bounded audit receipt for pre-dispatch cancellation: "direct_delivery" | "trusted_receipt"
+	SupersededByTaskID       *string                `json:"superseded_by_task_id,omitempty"`       // completed task that authoritatively superseded this queued comment work
+	SupersededCommentIDs     []string               `json:"superseded_comment_ids,omitempty"`      // exact queued-plan ids proven covered by the superseding task
 	TriggerThreadID          string                 `json:"trigger_thread_id,omitempty"`           // root comment ID for the triggering thread
 	TriggerCommentContent    string                 `json:"trigger_comment_content,omitempty"`     // content of the triggering comment
 	TriggerSummary           *string                `json:"trigger_summary,omitempty"`             // canonical short description snapshot — comment text / autopilot title — taken at task creation; survives source edits/deletes
@@ -595,32 +598,39 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 	if t.HandoffNote.Valid {
 		handoffNote = t.HandoffNote.String
 	}
+	supersessionKind := ""
+	if t.SupersessionKind.Valid {
+		supersessionKind = t.SupersessionKind.String
+	}
 	return AgentTaskResponse{
-		ID:                  uuidToString(t.ID),
-		AgentID:             uuidToString(t.AgentID),
-		RuntimeID:           uuidToString(t.RuntimeID),
-		IssueID:             uuidToString(t.IssueID),
-		WorkspaceID:         workspaceID,
-		Status:              t.Status,
-		Priority:            t.Priority,
-		DispatchedAt:        timestampToPtr(t.DispatchedAt),
-		StartedAt:           timestampToPtr(t.StartedAt),
-		CompletedAt:         timestampToPtr(t.CompletedAt),
-		Result:              result,
-		Error:               textToPtr(t.Error),
-		FailureReason:       failureReason,
-		Attempt:             t.Attempt,
-		MaxAttempts:         t.MaxAttempts,
-		ParentTaskID:        uuidToPtr(t.ParentTaskID),
-		IsLeaderTask:        t.IsLeaderTask,
-		CreatedAt:           timestampToString(t.CreatedAt),
-		TriggerCommentID:    uuidToPtr(t.TriggerCommentID),
-		CoalescedCommentIDs: uuidsToStrings(t.CoalescedCommentIds),
-		DeliveredCommentIDs: uuidStringsOrEmpty(t.DeliveredCommentIds),
-		TriggerSummary:      textToPtr(t.TriggerSummary),
-		HandoffNote:         handoffNote,
-		WorkDir:             workDir,
-		RelativeWorkDir:     relativeWorkDir(workDir, workspaceID, uuidToString(t.ID)),
+		ID:                   uuidToString(t.ID),
+		AgentID:              uuidToString(t.AgentID),
+		RuntimeID:            uuidToString(t.RuntimeID),
+		IssueID:              uuidToString(t.IssueID),
+		WorkspaceID:          workspaceID,
+		Status:               t.Status,
+		Priority:             t.Priority,
+		DispatchedAt:         timestampToPtr(t.DispatchedAt),
+		StartedAt:            timestampToPtr(t.StartedAt),
+		CompletedAt:          timestampToPtr(t.CompletedAt),
+		Result:               result,
+		Error:                textToPtr(t.Error),
+		FailureReason:        failureReason,
+		Attempt:              t.Attempt,
+		MaxAttempts:          t.MaxAttempts,
+		ParentTaskID:         uuidToPtr(t.ParentTaskID),
+		IsLeaderTask:         t.IsLeaderTask,
+		CreatedAt:            timestampToString(t.CreatedAt),
+		TriggerCommentID:     uuidToPtr(t.TriggerCommentID),
+		CoalescedCommentIDs:  uuidsToStrings(t.CoalescedCommentIds),
+		DeliveredCommentIDs:  uuidStringsOrEmpty(t.DeliveredCommentIds),
+		SupersessionKind:     supersessionKind,
+		SupersededByTaskID:   uuidToPtr(t.SupersededByTaskID),
+		SupersededCommentIDs: uuidsToStrings(t.SupersededCommentIds),
+		TriggerSummary:       textToPtr(t.TriggerSummary),
+		HandoffNote:          handoffNote,
+		WorkDir:              workDir,
+		RelativeWorkDir:      relativeWorkDir(workDir, workspaceID, uuidToString(t.ID)),
 		// Surface task source so the UI can distinguish issue-linked tasks
 		// from chat-spawned or autopilot-spawned ones; all three may arrive
 		// with issue_id = "" once a task has no linked issue.

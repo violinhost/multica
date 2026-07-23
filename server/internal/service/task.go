@@ -1986,6 +1986,7 @@ func (s *TaskService) ClaimTask(ctx context.Context, agentID pgtype.UUID) (*db.A
 		outcome                                                              = "unknown"
 		getAgentMs, countRunningMs, claimAgentMs, updateStatusMs, dispatchMs int64
 		claimed                                                              *db.AgentTaskQueue
+		cancelledSuperseded                                                  []db.AgentTaskQueue
 	)
 	defer func() {
 		s.maybeLogClaimSlow(agentID, outcome, start, getAgentMs, countRunningMs, claimAgentMs, updateStatusMs, dispatchMs)
@@ -2011,6 +2012,15 @@ func (s *TaskService) ClaimTask(ctx context.Context, agentID pgtype.UUID) (*db.A
 			slog.Debug("task claim: no capacity", "agent_id", util.UUIDToString(agentID), "running", running, "max", agent.MaxConcurrentTasks)
 			outcome = "no_capacity"
 			return nil
+		}
+
+		cancelled, err := qtx.CancelSupersededQueuedCommentTasksForAgent(ctx, agentID)
+		if err != nil {
+			outcome = "error_cancel_superseded"
+			return fmt.Errorf("cancel superseded queued comment tasks: %w", err)
+		}
+		if len(cancelled) > 0 {
+			cancelledSuperseded = append(cancelledSuperseded[:0], cancelled...)
 		}
 
 		t0 = time.Now()
@@ -2040,7 +2050,14 @@ func (s *TaskService) ClaimTask(ctx context.Context, agentID pgtype.UUID) (*db.A
 		return nil, err
 	}
 	if claimed == nil {
+		if len(cancelledSuperseded) > 0 {
+			s.BroadcastCancelledTasks(ctx, cancelledSuperseded)
+		}
 		return nil, nil
+	}
+
+	if len(cancelledSuperseded) > 0 {
+		s.BroadcastCancelledTasks(ctx, cancelledSuperseded)
 	}
 
 	slog.Info("task claimed", "task_id", util.UUIDToString(claimed.ID), "agent_id", util.UUIDToString(agentID))

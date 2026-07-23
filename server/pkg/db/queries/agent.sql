@@ -441,7 +441,10 @@ WHERE atq.id = $1 AND a.workspace_id = $2;
 UPDATE agent_task_queue
 SET status = 'dispatched',
     dispatched_at = now(),
-    prepare_lease_expires_at = now() + make_interval(secs => @prepare_lease_secs::double precision)
+    prepare_lease_expires_at = now() + make_interval(secs => @prepare_lease_secs::double precision),
+    supersession_kind = NULL,
+    superseded_by_task_id = NULL,
+    superseded_comment_ids = '{}'
 WHERE id = (
     SELECT atq.id FROM agent_task_queue atq
     WHERE atq.agent_id = $1 AND atq.status = 'queued'
@@ -467,6 +470,115 @@ WHERE id = (
     FOR UPDATE SKIP LOCKED
 )
 RETURNING *;
+
+-- name: RecordTrustedTaskSupersessionReceipt :one
+-- Trusted external producers may stamp an explicit supersession receipt on a
+-- queued comment task when they can prove a historical run covered that exact
+-- plan, but the server cannot infer it from Multica-native rows alone. The
+-- claim path validates the receipt again before consuming it.
+UPDATE agent_task_queue
+SET supersession_kind = 'trusted_receipt',
+    superseded_by_task_id = @superseded_by_task_id,
+    superseded_comment_ids = @superseded_comment_ids::uuid[]
+WHERE id = @task_id
+  AND status = 'queued'
+RETURNING *;
+
+-- name: CancelSupersededQueuedCommentTasksForAgent :many
+-- Pre-allocation reconciliation for queued comment work. A queued comment task
+-- is cancelled before claim only when ONE of these exact proofs exists:
+--   1. direct_delivery: a completed task on the same (issue, agent) delivered
+--      every comment id in the queued task's full plan
+--      (trigger_comment_id + coalesced_comment_ids).
+--   2. trusted_receipt: a trusted producer explicitly stamped the queued row
+--      with the superseding completed task id plus the exact covered ids, and
+--      that receipt equals the queued task's full plan.
+--
+-- Anything partial, cross-issue, cross-agent, non-terminal, or semantically
+-- guessed is rejected by omission: the row stays queued and still claims.
+-- The update itself records the bounded audit receipt on the cancelled task so
+-- downstream systems can see WHICH proof fired and WHICH completed task won,
+-- without inferring from logs or free-form text.
+WITH queued AS (
+    SELECT
+        q.id,
+        q.agent_id,
+        q.issue_id,
+        q.trigger_comment_id,
+        q.coalesced_comment_ids,
+        q.supersession_kind,
+        q.superseded_by_task_id,
+        q.superseded_comment_ids,
+        (
+            SELECT COALESCE(array_agg(DISTINCT planned_id ORDER BY planned_id), '{}'::uuid[])
+            FROM unnest(array_append(q.coalesced_comment_ids, q.trigger_comment_id)) AS planned_id
+            WHERE planned_id IS NOT NULL
+        ) AS planned_comment_ids
+    FROM agent_task_queue q
+    WHERE q.agent_id = @agent_id
+      AND q.status = 'queued'
+      AND (q.trigger_comment_id IS NOT NULL OR cardinality(q.coalesced_comment_ids) > 0)
+),
+trusted_receipts AS (
+    SELECT
+        q.id AS queued_id,
+        'trusted_receipt'::text AS supersession_kind,
+        completed.id AS superseded_by_task_id,
+        q.superseded_comment_ids AS superseded_comment_ids
+    FROM queued q
+    JOIN agent_task_queue completed ON completed.id = q.superseded_by_task_id
+    WHERE q.supersession_kind = 'trusted_receipt'
+      AND completed.status = 'completed'
+      AND completed.issue_id = q.issue_id
+      AND completed.agent_id = q.agent_id
+      AND q.planned_comment_ids = (
+          SELECT COALESCE(array_agg(DISTINCT covered_id ORDER BY covered_id), '{}'::uuid[])
+          FROM unnest(q.superseded_comment_ids) AS covered_id
+          WHERE covered_id IS NOT NULL
+      )
+),
+direct_receipts AS (
+    SELECT
+        q.id AS queued_id,
+        'direct_delivery'::text AS supersession_kind,
+        completed.id AS superseded_by_task_id,
+        q.planned_comment_ids AS superseded_comment_ids
+    FROM queued q
+    JOIN LATERAL (
+        SELECT c.id
+        FROM agent_task_queue c
+        WHERE c.issue_id = q.issue_id
+          AND c.agent_id = q.agent_id
+          AND c.status = 'completed'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM unnest(q.planned_comment_ids) AS planned(id)
+              WHERE planned.id IS NULL
+                 OR NOT (planned.id = ANY(c.delivered_comment_ids))
+          )
+        ORDER BY c.completed_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+        LIMIT 1
+    ) completed ON TRUE
+),
+chosen AS (
+    SELECT * FROM trusted_receipts
+    UNION ALL
+    SELECT d.*
+    FROM direct_receipts d
+    WHERE NOT EXISTS (
+        SELECT 1 FROM trusted_receipts t WHERE t.queued_id = d.queued_id
+    )
+)
+UPDATE agent_task_queue q
+SET status = 'cancelled',
+    completed_at = now(),
+    prepare_lease_expires_at = NULL,
+    supersession_kind = chosen.supersession_kind,
+    superseded_by_task_id = chosen.superseded_by_task_id,
+    superseded_comment_ids = chosen.superseded_comment_ids
+FROM chosen
+WHERE q.id = chosen.queued_id
+RETURNING q.*;
 
 -- name: SetTaskDeliveredCommentIDs :one
 -- Replace (rather than append to) the delivery receipt for this claim. A stale
