@@ -150,28 +150,29 @@ func TestClaimTaskByRuntime_CancelsDirectDeliverySupersessionBeforeDispatch(t *t
 	covered := []string{commentA, commentB}
 	slices.Sort(covered)
 
-	var supersedingTaskID string
-	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (
-			agent_id, runtime_id, issue_id, status, priority,
-			delivered_comment_ids, started_at, completed_at
-		)
-		VALUES ($1, $2, $3, 'completed', 0, ARRAY[$4::uuid, $5::uuid], now() - interval '2 minutes', now() - interval '1 minute')
-		RETURNING id
-	`, agentID, runtimeID, issueID, commentA, commentB).Scan(&supersedingTaskID); err != nil {
-		t.Fatalf("insert direct completed task: %v", err)
-	}
-
 	var obsoleteTaskID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id, status, priority,
-			trigger_comment_id, coalesced_comment_ids
+			trigger_comment_id, coalesced_comment_ids, created_at
 		)
-		VALUES ($1, $2, $3, 'queued', 10, $4, ARRAY[$5::uuid])
+		VALUES ($1, $2, $3, 'queued', 10, $4, ARRAY[$5::uuid], now() - interval '10 minutes')
 		RETURNING id
 	`, agentID, runtimeID, issueID, commentB, commentA).Scan(&obsoleteTaskID); err != nil {
 		t.Fatalf("insert direct obsolete queued task: %v", err)
+	}
+
+	var supersedingTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			delivered_comment_ids, started_at, completed_at,
+			created_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, ARRAY[$4::uuid, $5::uuid], now() - interval '2 minutes', now() - interval '1 minute', now() - interval '90 seconds')
+		RETURNING id
+	`, agentID, runtimeID, issueID, commentA, commentB).Scan(&supersedingTaskID); err != nil {
+		t.Fatalf("insert later direct completed task: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -196,6 +197,120 @@ func TestClaimTaskByRuntime_CancelsDirectDeliverySupersessionBeforeDispatch(t *t
 	}
 	if !slices.Equal(audit.SupersededCommentIDs, covered) {
 		t.Fatalf("superseded_comment_ids = %v, want %v", audit.SupersededCommentIDs, covered)
+	}
+}
+
+func TestClaimTaskByRuntime_HistoricalDirectDeliveryDoesNotCancelLaterQueuedTask(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	runtimeID := createClaimReclaimRuntime(t, ctx, "Historical direct runtime")
+	agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Historical direct agent")
+	commentA := insertSupersessionComment(t, ctx, issueID, "historical older scope")
+	commentB := insertSupersessionComment(t, ctx, issueID, "historical newer scope")
+
+	var historicalTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			delivered_comment_ids, started_at, completed_at,
+			created_at
+		)
+		VALUES ($1, $2, $3, 'completed', 0, ARRAY[$4::uuid, $5::uuid], now() - interval '20 minutes', now() - interval '10 minutes', now() - interval '21 minutes')
+		RETURNING id
+	`, agentID, runtimeID, issueID, commentA, commentB).Scan(&historicalTaskID); err != nil {
+		t.Fatalf("insert historical completed task: %v", err)
+	}
+
+	var queuedTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			trigger_comment_id, coalesced_comment_ids
+		)
+		VALUES ($1, $2, $3, 'queued', 10, $4, ARRAY[$5::uuid])
+		RETURNING id
+	`, agentID, runtimeID, issueID, commentB, commentA).Scan(&queuedTaskID); err != nil {
+		t.Fatalf("insert later queued task: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+	})
+
+	task := claimTaskByRuntimeOnce(t, runtimeID, "historical-direct-daemon")
+	if task == nil {
+		t.Fatal("expected later queued task to dispatch; older completed task must not suppress intentional new work")
+	}
+	if task.ID != queuedTaskID {
+		t.Fatalf("claimed task id = %s, want %s", task.ID, queuedTaskID)
+	}
+
+	audit := loadSupersessionAudit(t, queuedTaskID)
+	if audit.Status != "dispatched" || !audit.Dispatched {
+		t.Fatalf("later queued task status = %s dispatched=%v, want dispatched=true", audit.Status, audit.Dispatched)
+	}
+	if audit.SupersessionKind != "" {
+		t.Fatalf("historical direct-delivery must not stamp supersession audit, got %q", audit.SupersessionKind)
+	}
+}
+
+func TestClaimTaskByRuntime_DirectDeliveryDoesNotCancelRetryOrRerunShapedTask(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name      string
+		column    string
+		fixtureID string
+	}{
+		{name: "retry", column: "retry_of_task_id", fixtureID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+		{name: "rerun", column: "rerun_of_task_id", fixtureID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtimeID := createClaimReclaimRuntime(t, ctx, "Direct special-shape runtime "+tc.name)
+			agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Direct special-shape agent "+tc.name)
+			commentA := insertSupersessionComment(t, ctx, issueID, "special older "+tc.name)
+			commentB := insertSupersessionComment(t, ctx, issueID, "special newer "+tc.name)
+
+			if _, err := testPool.Exec(ctx, `
+				INSERT INTO agent_task_queue (
+					agent_id, runtime_id, issue_id, status, priority,
+					delivered_comment_ids, started_at, completed_at,
+					created_at
+				)
+				VALUES ($1, $2, $3, 'completed', 0, ARRAY[$4::uuid, $5::uuid], now() - interval '2 minutes', now() - interval '1 minute', now() - interval '90 seconds')
+			`, agentID, runtimeID, issueID, commentA, commentB); err != nil {
+				t.Fatalf("insert later covering completed task: %v", err)
+			}
+
+			var queuedTaskID string
+			query := `
+				INSERT INTO agent_task_queue (
+					agent_id, runtime_id, issue_id, status, priority,
+					trigger_comment_id, coalesced_comment_ids, created_at, ` + tc.column + `
+				)
+				VALUES ($1, $2, $3, 'queued', 10, $4, ARRAY[$5::uuid], now() - interval '10 minutes', $6::uuid)
+				RETURNING id
+			`
+			if err := testPool.QueryRow(ctx, query, agentID, runtimeID, issueID, commentB, commentA, tc.fixtureID).Scan(&queuedTaskID); err != nil {
+				t.Fatalf("insert queued %s task: %v", tc.name, err)
+			}
+			t.Cleanup(func() {
+				testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+			})
+
+			task := claimTaskByRuntimeOnce(t, runtimeID, "direct-shape-"+tc.name)
+			if task == nil {
+				t.Fatalf("expected %s-shaped queued task to dispatch; direct delivery must fail closed for this shape", tc.name)
+			}
+			if task.ID != queuedTaskID {
+				t.Fatalf("claimed task id = %s, want %s", task.ID, queuedTaskID)
+			}
+		})
 	}
 }
 

@@ -900,6 +900,8 @@ WITH queued AS (
         q.issue_id,
         q.trigger_comment_id,
         q.coalesced_comment_ids,
+        q.retry_of_task_id,
+        q.rerun_of_task_id,
         q.supersession_kind,
         q.superseded_by_task_id,
         q.superseded_comment_ids,
@@ -944,12 +946,16 @@ direct_receipts AS (
         WHERE c.issue_id = q.issue_id
           AND c.agent_id = q.agent_id
           AND c.status = 'completed'
+          AND c.completed_at IS NOT NULL
+          AND c.completed_at > q.created_at
           AND NOT EXISTS (
               SELECT 1
               FROM unnest(q.planned_comment_ids) AS planned(id)
               WHERE planned.id IS NULL
                  OR NOT (planned.id = ANY(c.delivered_comment_ids))
           )
+          AND q.retry_of_task_id IS NULL
+          AND q.rerun_of_task_id IS NULL
         ORDER BY c.completed_at DESC NULLS LAST, c.created_at DESC, c.id DESC
         LIMIT 1
     ) completed ON TRUE
