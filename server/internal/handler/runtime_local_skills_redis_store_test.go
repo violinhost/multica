@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -22,6 +23,9 @@ func newRedisTestClient(t *testing.T) *redis.Client {
 	t.Helper()
 	url := os.Getenv("REDIS_TEST_URL")
 	if url == "" {
+		if testutil.RequireTestRedis() {
+			t.Fatal("REDIS_TEST_URL not set")
+		}
 		t.Skip("REDIS_TEST_URL not set")
 	}
 	opts, err := redis.ParseURL(url)
@@ -32,6 +36,9 @@ func newRedisTestClient(t *testing.T) *redis.Client {
 	rdb := redis.NewClient(opts)
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
+		if testutil.RequireTestRedis() {
+			t.Fatalf("REDIS_TEST_URL unreachable: %v", err)
+		}
 		t.Skipf("REDIS_TEST_URL unreachable: %v", err)
 	}
 	if err := rdb.FlushDB(ctx).Err(); err != nil {

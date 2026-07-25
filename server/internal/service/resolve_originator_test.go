@@ -14,6 +14,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
+	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/featureflag"
@@ -33,10 +34,16 @@ func newResolveOriginatorPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
+		if testutil.RequireTestDB() {
+			t.Fatalf("database unavailable: %v", err)
+		}
 		t.Skipf("database unavailable: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		if testutil.RequireTestDB() {
+			t.Fatalf("database unreachable: %v", err)
+		}
 		t.Skipf("database unreachable: %v", err)
 	}
 	t.Cleanup(pool.Close)

@@ -19,6 +19,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/realtime"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -45,11 +46,17 @@ func TestMain(m *testing.M) {
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		fmt.Printf("Skipping tests: could not connect to database: %v\n", err)
+		if testutil.RequireTestDB() {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		fmt.Printf("Skipping tests: database not reachable: %v\n", err)
 		pool.Close()
+		if testutil.RequireTestDB() {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 

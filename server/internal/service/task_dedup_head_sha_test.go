@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -35,10 +36,16 @@ func newHeadShaDedupPool(t *testing.T) *pgxpool.Pool {
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
+		if testutil.RequireTestDB() {
+			t.Fatalf("database unavailable: %v", err)
+		}
 		t.Skipf("database unavailable: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		if testutil.RequireTestDB() {
+			t.Fatalf("database unreachable: %v", err)
+		}
 		t.Skipf("database unreachable: %v", err)
 	}
 	t.Cleanup(pool.Close)
