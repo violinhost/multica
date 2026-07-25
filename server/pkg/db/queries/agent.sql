@@ -227,8 +227,10 @@ SELECT
     sqlc.narg(rerun_of_task_id),
     sqlc.narg(trigger_evidence_kind),
     sqlc.narg(trigger_evidence_ref_id)
+-- INSERT ... SELECT continues directly into the admission WHERE clause; do
+-- not close a VALUES-style tuple here.
 WHERE
-    $3 IS NULL
+    $3::uuid IS NULL
     OR sqlc.narg('rerun_of_task_id')::uuid IS NOT NULL
     OR NOT EXISTS (
         SELECT 1

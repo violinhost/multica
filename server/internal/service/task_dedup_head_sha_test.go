@@ -288,46 +288,60 @@ func TestHeadShaDedup_SameShaStillDedups(t *testing.T) {
 // continuation for SHA A atomically, while a new head SHA B and an explicit
 // rerun remain runnable.
 func TestCreateAgentTask_RunningOwnerGuardIsHeadScopedAndRerunSafe(t *testing.T) {
-	ctx := context.Background()
-	pool := newHeadShaDedupPool(t)
-	q := db.New(pool)
-	fx := createHeadShaDedupFixture(t, ctx, pool, shaA, "open")
+	t.Run("same head suppressed", func(t *testing.T) {
+		ctx := context.Background()
+		pool := newHeadShaDedupPool(t)
+		q := db.New(pool)
+		fx := createHeadShaDedupFixture(t, ctx, pool, shaA, "open")
+		insertActiveReviewTask(t, ctx, pool, fx, "running", shaA)
 
-	runningID := insertActiveReviewTask(t, ctx, pool, fx, "running", shaA)
+		if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+			AgentID:   fx.agentID,
+			RuntimeID: fx.runtimeID,
+			IssueID:   fx.issueID,
+			Priority:  0,
+			HeadSha:   pgtype.Text{String: shaA, Valid: true},
+		}); err != pgx.ErrNoRows {
+			t.Fatalf("CreateAgentTask against same running SHA A = %v, want pgx.ErrNoRows", err)
+		}
+	})
 
-	// Same head: no second continuation while the running owner holds SHA A.
-	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID:   fx.agentID,
-		RuntimeID: fx.runtimeID,
-		IssueID:   fx.issueID,
-		Priority:  0,
-		HeadSha:   pgtype.Text{String: shaA, Valid: true},
-	}); err != pgx.ErrNoRows {
-		t.Fatalf("CreateAgentTask against same running SHA A = %v, want pgx.ErrNoRows", err)
-	}
+	t.Run("new head still enqueues", func(t *testing.T) {
+		ctx := context.Background()
+		pool := newHeadShaDedupPool(t)
+		q := db.New(pool)
+		fx := createHeadShaDedupFixture(t, ctx, pool, shaA, "open")
+		insertActiveReviewTask(t, ctx, pool, fx, "running", shaA)
 
-	// New head: the running SHA A owner must NOT suppress a SHA B request.
-	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID:   fx.agentID,
-		RuntimeID: fx.runtimeID,
-		IssueID:   fx.issueID,
-		Priority:  0,
-		HeadSha:   pgtype.Text{String: shaB, Valid: true},
-	}); err != nil {
-		t.Fatalf("CreateAgentTask against newer SHA B should enqueue, got %v", err)
-	}
+		if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+			AgentID:   fx.agentID,
+			RuntimeID: fx.runtimeID,
+			IssueID:   fx.issueID,
+			Priority:  0,
+			HeadSha:   pgtype.Text{String: shaB, Valid: true},
+		}); err != nil {
+			t.Fatalf("CreateAgentTask against newer SHA B should enqueue, got %v", err)
+		}
+	})
 
-	// Explicit rerun bypasses the running-owner guard.
-	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID:       fx.agentID,
-		RuntimeID:     fx.runtimeID,
-		IssueID:       fx.issueID,
-		Priority:      0,
-		HeadSha:       pgtype.Text{String: shaA, Valid: true},
-		RerunOfTaskID: util.MustParseUUID(runningID),
-	}); err != nil {
-		t.Fatalf("CreateAgentTask explicit rerun should bypass the running-owner guard, got %v", err)
-	}
+	t.Run("explicit rerun bypasses active-owner guard", func(t *testing.T) {
+		ctx := context.Background()
+		pool := newHeadShaDedupPool(t)
+		q := db.New(pool)
+		fx := createHeadShaDedupFixture(t, ctx, pool, shaA, "open")
+		runningID := insertActiveReviewTask(t, ctx, pool, fx, "running", shaA)
+
+		if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+			AgentID:       fx.agentID,
+			RuntimeID:     fx.runtimeID,
+			IssueID:       fx.issueID,
+			Priority:      0,
+			HeadSha:       pgtype.Text{String: shaA, Valid: true},
+			RerunOfTaskID: util.MustParseUUID(runningID),
+		}); err != nil {
+			t.Fatalf("CreateAgentTask explicit rerun should bypass the running-owner guard, got %v", err)
+		}
+	})
 }
 
 // Behavior 4 (fall-back safety): an issue with no linked PR has no review SHA,

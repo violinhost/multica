@@ -1436,9 +1436,8 @@ SELECT
     $20,
     $21,
     $22
-)
 WHERE
-    $3 IS NULL
+    $3::uuid IS NULL
     OR $20::uuid IS NOT NULL
     OR NOT EXISTS (
         SELECT 1
