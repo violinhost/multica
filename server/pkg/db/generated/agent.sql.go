@@ -1407,6 +1407,18 @@ func (q *Queries) CreateAgentBuilder(ctx context.Context, arg CreateAgentBuilder
 }
 
 const createAgentTask = `-- name: CreateAgentTask :one
+WITH equivalent_active AS (
+    SELECT active.id
+    FROM agent_task_queue active
+    WHERE active.issue_id = $3
+      AND active.agent_id = $1
+      AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+      AND (
+        COALESCE($12::text, '') = ''
+        OR active.context->>'head_sha' = $12::text
+      )
+    FOR UPDATE
+)
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
@@ -1439,17 +1451,7 @@ SELECT
 WHERE
     $3::uuid IS NULL
     OR $20::uuid IS NOT NULL
-    OR NOT EXISTS (
-        SELECT 1
-        FROM agent_task_queue active
-        WHERE active.issue_id = $3
-          AND active.agent_id = $1
-          AND active.status IN ('running', 'waiting_local_directory')
-          AND (
-            COALESCE($12::text, '') = ''
-            OR active.context->>'head_sha' = $12::text
-          )
-    )
+    OR NOT EXISTS (SELECT 1 FROM equivalent_active)
 ON CONFLICT (issue_id, agent_id)
     WHERE status IN ('queued', 'dispatched')
     DO NOTHING

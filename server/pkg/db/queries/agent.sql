@@ -191,13 +191,32 @@ ORDER BY created_at DESC;
 -- parsing (parseQuickCreateContext short-circuits on IssueID.Valid), so this
 -- key rides harmlessly alongside.
 --
--- Active-owner admission guard (VEL-3221): issue-linked enqueues are admitted
--- only when there is NO equivalent running / waiting_local_directory owner for
--- the same (issue, agent, revision). queued/dispatched siblings are still
--- handled by the partial unique index below, so comment-triggered callers can
--- merge into the queued owner and preserve trigger/coalesced provenance. A
--- manual rerun (rerun_of_task_id set) bypasses this guard on purpose: approved
--- reruns remain runnable even if the old owner is still active.
+-- Active-owner admission guard (VEL-3221): issue-linked enqueues first take a
+-- row-locking equivalence probe over EVERY active owner state for the same
+-- (issue, agent, revision): queued, dispatched, running, and
+-- waiting_local_directory. This closes the dispatched→running race the partial
+-- unique index alone cannot: if another transaction is moving a same-head row
+-- out of the queued/dispatched unique-index set, this statement waits on that
+-- row lock and re-checks the owner after the transition commits, instead of
+-- seeing the pre-transition snapshot and then succeeding once the index entry
+-- disappears. queued/dispatched siblings still preserve comment-merge behavior:
+-- the optimistic comment path hits its pending/merge handling first, and any
+-- late enqueue fallback that reaches here now returns pgx.ErrNoRows rather than
+-- creating a duplicate owner. A manual rerun (rerun_of_task_id set) bypasses
+-- this equivalence probe on purpose: approved reruns remain runnable even if
+-- the old owner is still active.
+WITH equivalent_active AS (
+    SELECT active.id
+    FROM agent_task_queue active
+    WHERE active.issue_id = $3
+      AND active.agent_id = $1
+      AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+      AND (
+        COALESCE(sqlc.narg('head_sha')::text, '') = ''
+        OR active.context->>'head_sha' = sqlc.narg('head_sha')::text
+      )
+    FOR UPDATE
+)
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
@@ -232,17 +251,7 @@ SELECT
 WHERE
     $3::uuid IS NULL
     OR sqlc.narg('rerun_of_task_id')::uuid IS NOT NULL
-    OR NOT EXISTS (
-        SELECT 1
-        FROM agent_task_queue active
-        WHERE active.issue_id = $3
-          AND active.agent_id = $1
-          AND active.status IN ('running', 'waiting_local_directory')
-          AND (
-            COALESCE(sqlc.narg('head_sha')::text, '') = ''
-            OR active.context->>'head_sha' = sqlc.narg('head_sha')::text
-          )
-    )
+    OR NOT EXISTS (SELECT 1 FROM equivalent_active)
 ON CONFLICT (issue_id, agent_id)
     WHERE status IN ('queued', 'dispatched')
     DO NOTHING

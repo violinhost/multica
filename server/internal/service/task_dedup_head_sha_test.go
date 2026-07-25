@@ -198,6 +198,44 @@ func insertActiveReviewTask(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 	return taskID
 }
 
+func waitForBackendLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool, pid uint32) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var waitEventType, query string
+		err := pool.QueryRow(ctx, `
+			SELECT COALESCE(wait_event_type, ''), COALESCE(query, '')
+			FROM pg_stat_activity
+			WHERE pid = $1
+		`, int32(pid)).Scan(&waitEventType, &query)
+		if err == nil && waitEventType == "Lock" {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("backend pid %d never entered lock wait", pid)
+}
+
+func countIssueAgentTasksByStatus(t *testing.T, ctx context.Context, pool *pgxpool.Pool, fx headShaDedupFixture, headSha string) (running, queued int) {
+	t.Helper()
+	if err := pool.QueryRow(ctx, `
+		SELECT
+			count(*) FILTER (WHERE status = 'running'),
+			count(*) FILTER (WHERE status = 'queued')
+		FROM agent_task_queue
+		WHERE issue_id = $1
+		  AND agent_id = $2
+		  AND (
+		    $3 = ''
+		    OR context->>'head_sha' = $3
+		  )
+	`, fx.issueID, fx.agentID, headSha).Scan(&running, &queued); err != nil {
+		t.Fatalf("count issue/agent tasks by status: %v", err)
+	}
+	return running, queued
+}
+
 func hasPending(t *testing.T, ctx context.Context, q *db.Queries, fx headShaDedupFixture, headSha string) bool {
 	t.Helper()
 	got, err := q.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
@@ -342,6 +380,92 @@ func TestCreateAgentTask_RunningOwnerGuardIsHeadScopedAndRerunSafe(t *testing.T)
 			t.Fatalf("CreateAgentTask explicit rerun should bypass the running-owner guard, got %v", err)
 		}
 	})
+}
+
+// VEL-3221 execution-level race canary: when a same-head task transitions
+// dispatched→running in another transaction, a concurrent enqueue for the same
+// (issue, agent, head) must wait for that transition and then return
+// pgx.ErrNoRows, leaving the authoritative owner count at running=1 queued=0.
+func TestCreateAgentTask_DispatchedToRunningTransitionRaceReturnsNoRows(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	pool := newHeadShaDedupPool(t)
+	q := db.New(pool)
+	fx := createHeadShaDedupFixture(t, ctx, pool, shaA, "open")
+	taskID := insertActiveReviewTask(t, ctx, pool, fx, "dispatched", shaA)
+
+	connA, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire conn A: %v", err)
+	}
+	defer connA.Release()
+	txA, err := connA.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin tx A: %v", err)
+	}
+	defer txA.Rollback(context.Background())
+
+	if _, err := txA.Exec(ctx, `
+		UPDATE agent_task_queue
+		SET status = 'running', started_at = now()
+		WHERE id = $1
+	`, taskID); err != nil {
+		t.Fatalf("tx A dispatched->running update: %v", err)
+	}
+
+	connB, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire conn B: %v", err)
+	}
+	defer connB.Release()
+	txB, err := connB.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin tx B: %v", err)
+	}
+	defer txB.Rollback(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := db.New(txB).CreateAgentTask(ctx, db.CreateAgentTaskParams{
+			AgentID:   fx.agentID,
+			RuntimeID: fx.runtimeID,
+			IssueID:   fx.issueID,
+			Priority:  0,
+			HeadSha:   pgtype.Text{String: shaA, Valid: true},
+		})
+		errCh <- err
+	}()
+
+	waitForBackendLock(t, ctx, pool, connB.Conn().PgConn().PID())
+	select {
+	case err := <-errCh:
+		t.Fatalf("CreateAgentTask returned before tx A committed: %v", err)
+	default:
+	}
+
+	if err := txA.Commit(ctx); err != nil {
+		t.Fatalf("commit tx A: %v", err)
+	}
+	if err := <-errCh; err != pgx.ErrNoRows {
+		t.Fatalf("CreateAgentTask after dispatched->running transition = %v, want pgx.ErrNoRows", err)
+	}
+
+	running, queued := countIssueAgentTasksByStatus(t, ctx, pool, fx, shaA)
+	if running != 1 || queued != 0 {
+		t.Fatalf("final same-head owner counts = running:%d queued:%d, want running:1 queued:0", running, queued)
+	}
+
+	// Control: a newer head is still runnable after the same transition.
+	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+		AgentID:   fx.agentID,
+		RuntimeID: fx.runtimeID,
+		IssueID:   fx.issueID,
+		Priority:  0,
+		HeadSha:   pgtype.Text{String: shaB, Valid: true},
+	}); err != nil {
+		t.Fatalf("CreateAgentTask for newer head after the race should still enqueue, got %v", err)
+	}
 }
 
 // Behavior 4 (fall-back safety): an issue with no linked PR has no review SHA,
