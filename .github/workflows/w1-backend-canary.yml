@@ -1,0 +1,233 @@
+name: W1 Backend Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: Exact 40-character commit selected by ci.execute.v1
+        required: true
+        type: string
+      base_sha:
+        description: Authoritative base commit expected to remain the merge base
+        required: true
+        type: string
+      backend_provider:
+        description: Broker-selected provider
+        required: true
+        type: choice
+        options: [local_self_hosted, github_hosted]
+      backend_lease_id:
+        description: ci.execute.v1 lease
+        required: true
+        type: string
+      backend_lease_expires_at:
+        description: UTC expiry for the lease
+        required: true
+        type: string
+      backend_routing_reason:
+        description: Auditable Broker routing reason
+        required: true
+        type: string
+      cancel_stale:
+        description: Cancel an older run for this exact head if policy allows
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.head_sha }}
+  cancel-in-progress: ${{ inputs.cancel_stale }}
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ${{ fromJSON(inputs.backend_provider == 'local_self_hosted' && '["self-hosted","Linux","ARM64","us-dallas","svc-002","ci-linux-arm64","multica"]' || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: multica
+          POSTGRES_USER: multica
+          POSTGRES_PASSWORD: multica
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U multica -d multica"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
+      REDIS_TEST_URL: redis://localhost:6379/1
+      MULTICA_REQUIRE_TEST_DB: "1"
+      MULTICA_REQUIRE_TEST_REDIS: "1"
+    steps:
+      - name: Prepare ephemeral checkout and task home
+        id: prep
+        shell: bash
+        run: |
+          set -euo pipefail
+          checkout_rel=".ci-checkouts/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          checkout_dir="$GITHUB_WORKSPACE/$checkout_rel"
+          task_home="$RUNNER_TEMP/multica-task-home/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          for path in "$checkout_dir" "$task_home"; do
+            chmod -R u+w "$path" 2>/dev/null || true
+            rm -rf "$path"
+          done
+          mkdir -p "$checkout_dir" "$task_home/.cache" "$task_home/.config" "$task_home/.local/share"
+          echo "checkout_rel=$checkout_rel" >> "$GITHUB_OUTPUT"
+          echo "checkout_dir=$checkout_dir" >> "$GITHUB_OUTPUT"
+          echo "task_home=$task_home" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Broker decision
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.base_sha }}
+          LEASE_ID: ${{ inputs.backend_lease_id }}
+          LEASE_EXPIRES_AT: ${{ inputs.backend_lease_expires_at }}
+          PROVIDER: ${{ inputs.backend_provider }}
+          ROUTING_REASON: ${{ inputs.backend_routing_reason }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Broker exact head SHA is invalid" >&2
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Broker base SHA is invalid" >&2
+            exit 1
+          fi
+          if [[ ! "$LEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$ ]]; then
+            echo "Broker lease identity is invalid" >&2
+            exit 1
+          fi
+          if ! LEASE_EXPIRES_EPOCH="$(date -u -d "$LEASE_EXPIRES_AT" +%s)" || (( $(date -u +%s) >= LEASE_EXPIRES_EPOCH )); then
+            echo "Broker lease is invalid or expired" >&2
+            exit 1
+          fi
+          case "$PROVIDER:$ROUTING_REASON" in
+            local_self_hosted:local_capacity_available | \
+            github_hosted:capacity_exhausted | \
+            github_hosted:queue_over_threshold | \
+            github_hosted:node_offline | \
+            github_hosted:vm_offline | \
+            github_hosted:runner_offline | \
+            github_hosted:setup_failed) ;;
+            *)
+              echo "Broker provider and routing reason do not match policy" >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "### ci.execute.v1 backend decision"
+            echo "- provider: $PROVIDER"
+            echo "- routing reason: $ROUTING_REASON"
+            echo "- lease: $LEASE_ID"
+            echo "- lease expires: $LEASE_EXPIRES_AT"
+            echo "- exact head: $EXPECTED_HEAD_SHA"
+            echo "- authoritative base: $EXPECTED_BASE_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout exact head under test
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.head_sha }}
+          path: ${{ steps.prep.outputs.checkout_rel }}
+
+      - name: Validate exact checkout and base ancestry
+        shell: bash
+        working-directory: ${{ steps.prep.outputs.checkout_dir }}
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.base_sha }}
+          HOME: ${{ steps.prep.outputs.task_home }}
+          XDG_CACHE_HOME: ${{ steps.prep.outputs.task_home }}/.cache
+          XDG_CONFIG_HOME: ${{ steps.prep.outputs.task_home }}/.config
+          XDG_DATA_HOME: ${{ steps.prep.outputs.task_home }}/.local/share
+        run: |
+          set -euo pipefail
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_HEAD" != "$EXPECTED_HEAD_SHA" ]; then
+            echo "checked out $ACTUAL_HEAD, want $EXPECTED_HEAD_SHA" >&2
+            exit 1
+          fi
+          git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$EXPECTED_HEAD_SHA"
+          if [ "$(git merge-base "$EXPECTED_BASE_SHA" "$EXPECTED_HEAD_SHA")" != "$EXPECTED_BASE_SHA" ]; then
+            echo "authoritative base is not the merge base" >&2
+            exit 1
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache-dependency-path: ${{ steps.prep.outputs.checkout_rel }}/server/go.sum
+
+      - name: Build
+        working-directory: ${{ steps.prep.outputs.checkout_dir }}/server
+        env:
+          HOME: ${{ steps.prep.outputs.task_home }}
+          XDG_CACHE_HOME: ${{ steps.prep.outputs.task_home }}/.cache
+          XDG_CONFIG_HOME: ${{ steps.prep.outputs.task_home }}/.config
+          XDG_DATA_HOME: ${{ steps.prep.outputs.task_home }}/.local/share
+        run: go build ./...
+
+      - name: Run migrations
+        working-directory: ${{ steps.prep.outputs.checkout_dir }}/server
+        env:
+          HOME: ${{ steps.prep.outputs.task_home }}
+          XDG_CACHE_HOME: ${{ steps.prep.outputs.task_home }}/.cache
+          XDG_CONFIG_HOME: ${{ steps.prep.outputs.task_home }}/.config
+          XDG_DATA_HOME: ${{ steps.prep.outputs.task_home }}/.local/share
+        run: go run ./cmd/migrate up
+
+      - name: Test
+        working-directory: ${{ steps.prep.outputs.checkout_dir }}/server
+        env:
+          HOME: ${{ steps.prep.outputs.task_home }}
+          XDG_CACHE_HOME: ${{ steps.prep.outputs.task_home }}/.cache
+          XDG_CONFIG_HOME: ${{ steps.prep.outputs.task_home }}/.config
+          XDG_DATA_HOME: ${{ steps.prep.outputs.task_home }}/.local/share
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -json -race ./... | tee "$RUNNER_TEMP/multica-go-test.json"
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Verify DB-backed tests ran without substrate skips
+        working-directory: ${{ steps.prep.outputs.checkout_dir }}/server
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_JSON="$RUNNER_TEMP/multica-go-test.json"
+          grep -q '"Test":"TestCreateAgentTask_RunningOwnerGuardIsHeadScopedAndRerunSafe"' "$TEST_JSON"
+          grep -q '"Test":"TestCreateAgentTask_DispatchedToRunningTransitionRaceReturnsNoRows"' "$TEST_JSON"
+          if grep -E 'database not available|database unavailable|database unreachable|REDIS_TEST_URL not set|REDIS_TEST_URL unreachable|handler test fixture not initialized \(no DB\?\)|requires test database|test database not available' "$TEST_JSON" >/dev/null; then
+            echo "substrate-backed tests skipped instead of running" >&2
+            exit 1
+          fi
+
+      - name: Cleanup ephemeral checkout and task home
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in "${{ steps.prep.outputs.checkout_dir }}" "${{ steps.prep.outputs.task_home }}"; do
+            chmod -R u+w "$path" 2>/dev/null || true
+            rm -rf "$path"
+          done
