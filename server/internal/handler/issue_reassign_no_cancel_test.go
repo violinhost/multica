@@ -160,3 +160,37 @@ func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
 		t.Fatalf("new assignee must get exactly one run enqueued, got %d queued tasks", got)
 	}
 }
+
+// TestUpdateIssueReassignToAgentWithEquivalentRunningOwnerSkipsNewQueue is the
+// direct-assignment side of VEL-3221. If the target assignee already owns an
+// equivalent active task on the issue, reassignment must converge on that
+// running owner rather than allocating a second queued continuation.
+func TestUpdateIssueReassignToAgentWithEquivalentRunningOwnerSkipsNewQueue(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	ownerAgent := createHandlerTestAgent(t, "ReassignActiveOwnerCurrent", []byte("[]"))
+	newAgent := createHandlerTestAgent(t, "ReassignActiveOwnerTarget", []byte("[]"))
+
+	issueID := insertAgentAssignedIssue(t, ownerAgent, 92113, "reassign-active-owner")
+	runningTask := insertRunningIssueTask(t, newAgent, issueID)
+
+	w := httptest.NewRecorder()
+	req := newRequest("PUT", "/api/issues/"+issueID, map[string]any{
+		"assignee_type": "agent",
+		"assignee_id":   newAgent,
+	})
+	req = withURLParam(req, "id", issueID)
+	testHandler.UpdateIssue(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("UpdateIssue reassign: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if got := taskStatus(t, runningTask); got != "running" {
+		t.Fatalf("target assignee's existing task must remain authoritative, got status %q", got)
+	}
+	if got := queuedTaskCountFor(t, issueID, newAgent); got != 0 {
+		t.Fatalf("reassigning onto an equivalent running owner must not enqueue a duplicate, got %d queued tasks", got)
+	}
+}

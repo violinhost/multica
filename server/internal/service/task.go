@@ -553,6 +553,7 @@ func triggerOwnerAttribution(ctx context.Context, q *db.Queries, triggerID, work
 // owner_fallback has no agent owner to fall back to. Enqueue paths surface it so the
 // run never starts.
 var ErrAttributionFailClosed = errors.New("attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)")
+var ErrEquivalentTaskExists = errors.New("equivalent active task already exists")
 
 // applyAttributionFallback applies the workspace's degraded-attribution policy to a
 // resolved attribution whose source came back unattributed (no precise human). A
@@ -1033,6 +1034,14 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task enqueue skipped: equivalent task already active",
+				"issue_id", util.UUIDToString(issue.ID),
+				"agent_id", util.UUIDToString(issue.AssigneeID),
+				"force_fresh_session", forceFreshSession,
+			)
+			return db.AgentTaskQueue{}, ErrEquivalentTaskExists
+		}
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("create task: %w", err)
 	}
@@ -1152,6 +1161,14 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("mention task enqueue skipped: equivalent task already active",
+				"issue_id", util.UUIDToString(issue.ID),
+				"agent_id", util.UUIDToString(agentID),
+				"is_leader_task", isLeader,
+			)
+			return db.AgentTaskQueue{}, ErrEquivalentTaskExists
+		}
 		slog.Error("mention task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("create task: %w", err)
 	}

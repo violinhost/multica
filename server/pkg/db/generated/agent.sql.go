@@ -1413,7 +1413,7 @@ INSERT INTO agent_task_queue (
     squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id
 )
-VALUES (
+SELECT
     $1, $2, $3, 'queued', $4, $5,
     COALESCE($6::uuid[], '{}'),
     $7,
@@ -1437,6 +1437,23 @@ VALUES (
     $21,
     $22
 )
+WHERE
+    $3 IS NULL
+    OR $20::uuid IS NOT NULL
+    OR NOT EXISTS (
+        SELECT 1
+        FROM agent_task_queue active
+        WHERE active.issue_id = $3
+          AND active.agent_id = $1
+          AND active.status IN ('running', 'waiting_local_directory')
+          AND (
+            COALESCE($12::text, '') = ''
+            OR active.context->>'head_sha' = $12::text
+          )
+    )
+ON CONFLICT (issue_id, agent_id)
+    WHERE status IN ('queued', 'dispatched')
+    DO NOTHING
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id
 `
 
@@ -2844,24 +2861,25 @@ const hasActiveTaskForIssueAndAgent = `-- name: HasActiveTaskForIssueAndAgent :o
 SELECT count(*) > 0 AS has_active FROM agent_task_queue
 WHERE issue_id = $1 AND agent_id = $2
   AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+  AND (
+    COALESCE($3::text, '') = ''
+    OR context->>'head_sha' = $3::text
+  )
 `
 
 type HasActiveTaskForIssueAndAgentParams struct {
 	IssueID pgtype.UUID `json:"issue_id"`
 	AgentID pgtype.UUID `json:"agent_id"`
+	HeadSha pgtype.Text `json:"head_sha"`
 }
 
-// MUL-4195: true when the (issue, agent) pair has any non-terminal task in a
-// state whose completion will run completion reconciliation — queued,
-// dispatched, running, or waiting_local_directory. Used by the comment enqueue
-// path: when a merge into a pre-claim task fails (the task is already
-// dispatched/running, or a mismatched pre-claim task exists), a fresh queued
-// INSERT would collide with idx_one_pending_task_per_issue_agent AND would risk
-// a duplicate run. Instead the caller relies on that active task's completion
-// reconcile to schedule the guaranteed follow-up, and only enqueues fresh when
-// NO active task exists.
+// True when the (issue, agent) pair already has an EQUIVALENT non-terminal
+// task for the same reviewed head/revision. Used by comment and assignment
+// admission to converge on one authoritative owner across queued, dispatched,
+// running, and waiting_local_directory. Empty/NULL head_sha keeps the
+// historical issue+agent coalescing key for non-PR issues.
 func (q *Queries) HasActiveTaskForIssueAndAgent(ctx context.Context, arg HasActiveTaskForIssueAndAgentParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasActiveTaskForIssueAndAgent, arg.IssueID, arg.AgentID)
+	row := q.db.QueryRow(ctx, hasActiveTaskForIssueAndAgent, arg.IssueID, arg.AgentID, arg.HeadSha)
 	var has_active bool
 	err := row.Scan(&has_active)
 	return has_active, err

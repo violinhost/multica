@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/events"
@@ -174,6 +175,29 @@ func enqueueReviewTask(t *testing.T, ctx context.Context, q *db.Queries, fx head
 	}
 }
 
+func insertActiveReviewTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool, fx headShaDedupFixture, status, headSha string) string {
+	t.Helper()
+	var taskID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority, context, dispatched_at, started_at
+		)
+		VALUES (
+			$1, $2, $3, $4, 0,
+			CASE
+				WHEN $5 <> '' THEN jsonb_build_object('head_sha', $5)
+				ELSE NULL
+			END,
+			now(),
+			CASE WHEN $4 = 'running' THEN now() ELSE NULL END
+		)
+		RETURNING id
+	`, fx.agentID, fx.runtimeID, fx.issueID, status, headSha).Scan(&taskID); err != nil {
+		t.Fatalf("insert active review task (status=%s, head_sha=%q): %v", status, headSha, err)
+	}
+	return taskID
+}
+
 func hasPending(t *testing.T, ctx context.Context, q *db.Queries, fx headShaDedupFixture, headSha string) bool {
 	t.Helper()
 	got, err := q.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
@@ -257,6 +281,52 @@ func TestHeadShaDedup_SameShaStillDedups(t *testing.T) {
 
 	if !hasPending(t, ctx, q, fx, shaA) {
 		t.Fatalf("dedup MISS for the same SHA A — an unchanged HEAD should coalesce, not re-run")
+	}
+}
+
+// VEL-3221 regression: a RUNNING owner for SHA A must suppress a second queued
+// continuation for SHA A atomically, while a new head SHA B and an explicit
+// rerun remain runnable.
+func TestCreateAgentTask_RunningOwnerGuardIsHeadScopedAndRerunSafe(t *testing.T) {
+	ctx := context.Background()
+	pool := newHeadShaDedupPool(t)
+	q := db.New(pool)
+	fx := createHeadShaDedupFixture(t, ctx, pool, shaA, "open")
+
+	runningID := insertActiveReviewTask(t, ctx, pool, fx, "running", shaA)
+
+	// Same head: no second continuation while the running owner holds SHA A.
+	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+		AgentID:   fx.agentID,
+		RuntimeID: fx.runtimeID,
+		IssueID:   fx.issueID,
+		Priority:  0,
+		HeadSha:   pgtype.Text{String: shaA, Valid: true},
+	}); err != pgx.ErrNoRows {
+		t.Fatalf("CreateAgentTask against same running SHA A = %v, want pgx.ErrNoRows", err)
+	}
+
+	// New head: the running SHA A owner must NOT suppress a SHA B request.
+	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+		AgentID:   fx.agentID,
+		RuntimeID: fx.runtimeID,
+		IssueID:   fx.issueID,
+		Priority:  0,
+		HeadSha:   pgtype.Text{String: shaB, Valid: true},
+	}); err != nil {
+		t.Fatalf("CreateAgentTask against newer SHA B should enqueue, got %v", err)
+	}
+
+	// Explicit rerun bypasses the running-owner guard.
+	if _, err := q.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+		AgentID:       fx.agentID,
+		RuntimeID:     fx.runtimeID,
+		IssueID:       fx.issueID,
+		Priority:      0,
+		HeadSha:       pgtype.Text{String: shaA, Valid: true},
+		RerunOfTaskID: util.MustParseUUID(runningID),
+	}); err != nil {
+		t.Fatalf("CreateAgentTask explicit rerun should bypass the running-owner guard, got %v", err)
 	}
 }
 

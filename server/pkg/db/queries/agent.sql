@@ -190,13 +190,21 @@ ORDER BY created_at DESC;
 -- issues with no linked PR. Issue-linked tasks never hit quick-create context
 -- parsing (parseQuickCreateContext short-circuits on IssueID.Valid), so this
 -- key rides harmlessly alongside.
+--
+-- Active-owner admission guard (VEL-3221): issue-linked enqueues are admitted
+-- only when there is NO equivalent running / waiting_local_directory owner for
+-- the same (issue, agent, revision). queued/dispatched siblings are still
+-- handled by the partial unique index below, so comment-triggered callers can
+-- merge into the queued owner and preserve trigger/coalesced provenance. A
+-- manual rerun (rerun_of_task_id set) bypasses this guard on purpose: approved
+-- reruns remain runnable even if the old owner is still active.
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
     squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id
 )
-VALUES (
+SELECT
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
     COALESCE(sqlc.narg(coalesced_comment_ids)::uuid[], '{}'),
     sqlc.narg(trigger_summary),
@@ -219,7 +227,23 @@ VALUES (
     sqlc.narg(rerun_of_task_id),
     sqlc.narg(trigger_evidence_kind),
     sqlc.narg(trigger_evidence_ref_id)
-)
+WHERE
+    $3 IS NULL
+    OR sqlc.narg('rerun_of_task_id')::uuid IS NOT NULL
+    OR NOT EXISTS (
+        SELECT 1
+        FROM agent_task_queue active
+        WHERE active.issue_id = $3
+          AND active.agent_id = $1
+          AND active.status IN ('running', 'waiting_local_directory')
+          AND (
+            COALESCE(sqlc.narg('head_sha')::text, '') = ''
+            OR active.context->>'head_sha' = sqlc.narg('head_sha')::text
+          )
+    )
+ON CONFLICT (issue_id, agent_id)
+    WHERE status IN ('queued', 'dispatched')
+    DO NOTHING
 RETURNING *;
 
 -- name: CreateQuickCreateTask :one
@@ -991,18 +1015,18 @@ WHERE id = (
 RETURNING id, coalesced_comment_ids;
 
 -- name: HasActiveTaskForIssueAndAgent :one
--- MUL-4195: true when the (issue, agent) pair has any non-terminal task in a
--- state whose completion will run completion reconciliation — queued,
--- dispatched, running, or waiting_local_directory. Used by the comment enqueue
--- path: when a merge into a pre-claim task fails (the task is already
--- dispatched/running, or a mismatched pre-claim task exists), a fresh queued
--- INSERT would collide with idx_one_pending_task_per_issue_agent AND would risk
--- a duplicate run. Instead the caller relies on that active task's completion
--- reconcile to schedule the guaranteed follow-up, and only enqueues fresh when
--- NO active task exists.
+-- True when the (issue, agent) pair already has an EQUIVALENT non-terminal
+-- task for the same reviewed head/revision. Used by comment and assignment
+-- admission to converge on one authoritative owner across queued, dispatched,
+-- running, and waiting_local_directory. Empty/NULL head_sha keeps the
+-- historical issue+agent coalescing key for non-PR issues.
 SELECT count(*) > 0 AS has_active FROM agent_task_queue
 WHERE issue_id = $1 AND agent_id = $2
-  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory');
+  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+  AND (
+    COALESCE(sqlc.narg('head_sha')::text, '') = ''
+    OR context->>'head_sha' = sqlc.narg('head_sha')::text
+  );
 
 -- name: GetLatestTaskRoleForIssueAndAgent :one
 -- Returns the role markers from the agent's most recent task on this issue.

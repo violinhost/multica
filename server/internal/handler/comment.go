@@ -1535,43 +1535,28 @@ func (h *Handler) enqueueCommentAgentTriggers(ctx context.Context, issue db.Issu
 	}
 	for _, trigger := range triggers {
 		if trigger.AlreadyPending {
-			// MUL-4195: a queued/dispatched task for this (issue, agent)
-			// already exists. Historically we DROPPED the comment here, losing
-			// the user's follow-up instruction. Instead try to fold it into the
-			// queued (not-yet-claimed) task so a single run still covers every
-			// comment, re-stamping the run's originator/overlay to the new
-			// comment (mergeCommentIntoPendingTask).
-			//
-			// The merge reports HOW it resolved: a real merge is coalesced, a
-			// fail-closed / failed merge is blocked (attribution_blocked /
-			// internal_error) — never mislabeled as success (MUL-4525 §2, Elon
-			// round 5). Only "no queued task to fold into" falls through to the
-			// active-task decision below.
-			if status, reason, terminal := commentMergeTerminalOutcome(
-				h.mergeCommentIntoPendingTask(ctx, issue, trigger, triggerCommentID),
-			); terminal {
-				record(trigger, status, reason)
-				continue
-			}
-			// The merge found no queued task to fold into: the existing task
-			// is already dispatched/running (its claim response is built), or
-			// the queued row was just claimed. We must NOT enqueue a
-			// fresh queued task in that case — a dispatched sibling would trip
-			// the idx_one_pending_task_per_issue_agent unique index (dropping
-			// the comment again) and even where the index allows it we'd risk a
-			// duplicate concurrent run. When an active task exists, its
-			// completion reconcile (reconcileCommentsOnCompletion) is what
-			// guarantees this comment earns a bounded follow-up. Only when NO
-			// active task exists is a fresh enqueue both safe and necessary. On a
-			// query failure we fail closed (no fresh enqueue) and report a
-			// non-success internal_error rather than a fabricated deferred.
-			active, activeErr := h.hasActiveTaskForIssueAndAgent(ctx, issue.ID, trigger.Agent.ID)
-			if status, reason, enqueueFresh := decidePostMergeMiss(active, activeErr); !enqueueFresh {
+			if status, reason, enqueueFresh := h.resolveEquivalentCommentAdmission(ctx, issue, trigger, triggerCommentID); !enqueueFresh {
 				record(trigger, status, reason)
 				continue
 			}
 		}
 		if err := h.enqueueSingleCommentTrigger(ctx, issue, triggerCommentID, trigger, getEscalationDelay); err != nil {
+			if errors.Is(err, service.ErrEquivalentTaskExists) {
+				if status, reason, enqueueFresh := h.resolveEquivalentCommentAdmission(ctx, issue, trigger, triggerCommentID); !enqueueFresh {
+					record(trigger, status, reason)
+					continue
+				}
+				if err = h.enqueueSingleCommentTrigger(ctx, issue, triggerCommentID, trigger, getEscalationDelay); err == nil {
+					record(trigger, DispatchQueued, ReasonQueued)
+					continue
+				}
+				if errors.Is(err, service.ErrEquivalentTaskExists) {
+					if status, reason, enqueueFresh := h.resolveEquivalentCommentAdmission(ctx, issue, trigger, triggerCommentID); !enqueueFresh {
+						record(trigger, status, reason)
+						continue
+					}
+				}
+			}
 			record(trigger, DispatchBlocked, commentEnqueueFailureReason(err))
 			continue
 		}
@@ -1642,6 +1627,27 @@ func commentEnqueueFailureReason(err error) DispatchReasonCode {
 	return ReasonInternalError
 }
 
+// resolveEquivalentCommentAdmission handles "an equivalent task already exists"
+// uniformly for both the optimistic queued/dispatched dedup path and the
+// atomic create-time no-op path (VEL-3221). queued owners merge and preserve
+// trigger/coalesced provenance; running/waiting owners defer to completion
+// reconcile; only a confirmed lack of any equivalent owner retries a fresh
+// enqueue.
+func (h *Handler) resolveEquivalentCommentAdmission(ctx context.Context, issue db.Issue, trigger commentAgentTrigger, triggerCommentID pgtype.UUID) (DispatchStatus, DispatchReasonCode, bool) {
+	if status, reason, terminal := commentMergeTerminalOutcome(
+		h.mergeCommentIntoPendingTask(ctx, issue, trigger, triggerCommentID),
+	); terminal {
+		return status, reason, false
+	}
+	active, activeErr := h.hasActiveTaskForIssueAndAgent(
+		ctx,
+		issue.ID,
+		trigger.Agent.ID,
+		h.TaskService.ResolveIssueReviewSHAParam(ctx, issue.ID),
+	)
+	return decidePostMergeMiss(active, activeErr)
+}
+
 // hasActiveTaskForIssueAndAgent reports whether the (issue, agent) pair has any
 // non-terminal task whose completion will drive completion reconciliation. It
 // returns the query error rather than swallowing it (MUL-4525, Elon round 4):
@@ -1649,10 +1655,11 @@ func commentEnqueueFailureReason(err error) DispatchReasonCode {
 // duplicate) AND must not report a success — "cannot confirm whether a run is
 // active" is never the same as "a run is active". See decidePostMergeMiss /
 // decideSuppressedLeaderOutcome for the two decisions.
-func (h *Handler) hasActiveTaskForIssueAndAgent(ctx context.Context, issueID, agentID pgtype.UUID) (bool, error) {
+func (h *Handler) hasActiveTaskForIssueAndAgent(ctx context.Context, issueID, agentID pgtype.UUID, headSha pgtype.Text) (bool, error) {
 	active, err := h.Queries.HasActiveTaskForIssueAndAgent(ctx, db.HasActiveTaskForIssueAndAgentParams{
 		IssueID: issueID,
 		AgentID: agentID,
+		HeadSha: headSha,
 	})
 	if err != nil {
 		slog.Warn("has active task for issue+agent check failed",
@@ -2305,7 +2312,12 @@ func (h *Handler) resolveMentionedAgentCommentTriggers(ctx context.Context, issu
 			// deferred; otherwise nothing runs → self_trigger_suppressed.
 			if authorType == "agent" && authorID == uuidToString(leaderID) &&
 				h.shouldSuppressSquadLeaderSelfTrigger(ctx, issue.ID, leaderID, squad.ID) {
-				active, activeErr := h.hasActiveTaskForIssueAndAgent(ctx, issue.ID, leaderID)
+				active, activeErr := h.hasActiveTaskForIssueAndAgent(
+					ctx,
+					issue.ID,
+					leaderID,
+					h.TaskService.ResolveIssueReviewSHAParam(ctx, issue.ID),
+				)
 				status, reason := decideSuppressedLeaderOutcome(active, activeErr)
 				addTarget(commentMentionTarget{TargetType: "squad", TargetID: m.ID, Status: status, ReasonCode: reason})
 				continue

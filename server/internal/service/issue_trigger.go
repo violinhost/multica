@@ -73,19 +73,12 @@ func allowAllAgents(db.Agent) bool { return true }
 // the pending-task dedup), not the top-level decision.
 //
 // The decision must equal the real enqueue conditions so preview never claims
-// a net-new run that the write path then drops. The write enqueues through
-// CreateAgentTask, guarded by the (issue_id, agent_id) partial unique index
-// over pending (queued/dispatched) tasks; the pending check below mirrors that
-// guard, and only the status source needs it:
-//   - status source (backlog → active) can re-fire against an assignee that
-//     already holds a pending task (e.g. one a @mention raised while the issue
-//     sat in backlog); the check keeps preview from promising a run the unique
-//     index would coalesce away.
-//   - assign source (create / assignee change) skips the check: a create
-//     targets a fresh issue with no prior task, and a reassignment no longer
-//     cancels existing tasks (#4963 / MUL-4113) — in the rare case the new
-//     assignee already holds a pending task the insert simply no-ops on the
-//     same unique index, so the assignee still ends up with one pending run.
+// a net-new run that the write path then drops. VEL-3221 widened that
+// equivalence check from "pending only" to the authoritative active owner for
+// the same (issue, agent, reviewed head): queued/dispatched still coalesce on
+// the partial unique index, and running/waiting_local_directory are guarded in
+// CreateAgentTask itself. Both assign and status sources therefore consult the
+// same equivalent-run check.
 func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput, probe IssueTriggerProbe) (IssueRunTrigger, bool) {
 	issue := in.Issue
 	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
@@ -123,7 +116,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		if !canAccess(agent) {
 			return IssueRunTrigger{}, false
 		}
-		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, issue.AssigneeID) {
+		if s.hasEquivalentRun(ctx, issue.ID, issue.AssigneeID) {
 			return IssueRunTrigger{}, false
 		}
 		return IssueRunTrigger{
@@ -152,7 +145,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		if !canAccess(leader) {
 			return IssueRunTrigger{}, false
 		}
-		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, squad.LeaderID) {
+		if s.hasEquivalentRun(ctx, issue.ID, squad.LeaderID) {
 			return IssueRunTrigger{}, false
 		}
 		return IssueRunTrigger{
@@ -165,11 +158,12 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 	return IssueRunTrigger{}, false
 }
 
-// hasPendingRun reports whether the agent already holds a queued or dispatched
-// task for the issue (the (issue_id, agent_id) unique-index slot). Errors fail
-// closed to "pending" so preview never over-promises a run.
-func (s *IssueService) hasPendingRun(ctx context.Context, issueID, agentID pgtype.UUID) bool {
-	pending, err := s.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+// hasEquivalentRun reports whether the agent already holds an equivalent active
+// task for the issue (queued, dispatched, running, or
+// waiting_local_directory), keyed on the reviewed head when present. Errors
+// fail closed to "equivalent exists" so preview never over-promises a run.
+func (s *IssueService) hasEquivalentRun(ctx context.Context, issueID, agentID pgtype.UUID) bool {
+	active, err := s.Queries.HasActiveTaskForIssueAndAgent(ctx, db.HasActiveTaskForIssueAndAgentParams{
 		IssueID: issueID,
 		AgentID: agentID,
 		// Key dedup on the reviewed head so a pending run against an old HEAD
@@ -179,5 +173,5 @@ func (s *IssueService) hasPendingRun(ctx context.Context, issueID, agentID pgtyp
 	if err != nil {
 		return true
 	}
-	return pending
+	return active
 }

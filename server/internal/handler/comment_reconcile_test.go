@@ -121,6 +121,94 @@ func TestCompleteTask_ReconcilesMemberCommentPostedDuringRun(t *testing.T) {
 	}
 }
 
+// TestCommentAdmission_DoesNotQueueDuplicateWhileEquivalentRunOwnsHead is the
+// VEL-3221 / VEL-3214 regression test. A distinct action-required member
+// comment posted while the SAME agent already owns the SAME reviewed head in a
+// running task must not allocate a second queued continuation immediately; the
+// existing owner remains authoritative until completion reconcile schedules the
+// bounded follow-up.
+func TestCommentAdmission_DoesNotQueueDuplicateWhileEquivalentRunOwnsHead(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var agentID, runtimeID string
+	if err := testPool.QueryRow(ctx,
+		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 AND runtime_id IS NOT NULL LIMIT 1`,
+		testWorkspaceID).Scan(&agentID, &runtimeID); err != nil {
+		t.Fatalf("setup: get agent: %v", err)
+	}
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, assignee_type, assignee_id)
+		VALUES ($1, 'running-owner-admission fixture', 'in_progress', 'none', $2, 'member', 999009, 0, 'agent', $3)
+		RETURNING id
+	`, testWorkspaceID, testUserID, agentID).Scan(&issueID); err != nil {
+		t.Fatalf("setup: create issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM comment WHERE issue_id = $1`, issueID) })
+
+	issue, err := testHandler.Queries.GetIssue(ctx, util.MustParseUUID(issueID))
+	if err != nil {
+		t.Fatalf("setup: load issue: %v", err)
+	}
+
+	var triggerCommentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO comment (issue_id, workspace_id, author_type, author_id, content, type, created_at)
+		VALUES ($1, $2, 'member', $3, 'initial request', 'comment', now() - interval '10 minutes')
+		RETURNING id
+	`, issueID, testWorkspaceID, testUserID).Scan(&triggerCommentID); err != nil {
+		t.Fatalf("setup: trigger comment: %v", err)
+	}
+
+	var taskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, trigger_comment_id, delivered_comment_ids, status, priority, created_at, started_at)
+		VALUES ($1, $2, $3, $4, ARRAY[$4::uuid], 'running', 0, now() - interval '10 minutes', now() - interval '5 minutes')
+		RETURNING id
+	`, agentID, runtimeID, issueID, triggerCommentID).Scan(&taskID); err != nil {
+		t.Fatalf("setup: running task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID) })
+
+	var followupCommentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO comment (issue_id, workspace_id, author_type, author_id, content, type)
+		VALUES ($1, $2, 'member', $3, 'please also cover the operator hint', 'comment')
+		RETURNING id
+	`, issueID, testWorkspaceID, testUserID).Scan(&followupCommentID); err != nil {
+		t.Fatalf("setup: follow-up comment: %v", err)
+	}
+	comment, err := testHandler.Queries.GetComment(ctx, util.MustParseUUID(followupCommentID))
+	if err != nil {
+		t.Fatalf("setup: load follow-up comment: %v", err)
+	}
+	testHandler.triggerTasksForComment(ctx, issue, comment, nil, "member", testUserID, testUserID, "", nil)
+
+	if n := queuedTaskCountForAgentIssue(t, issueID, agentID); n != 0 {
+		t.Fatalf("expected 0 queued follow-ups while the equivalent run is active, got %d", n)
+	}
+
+	if w := completeTaskViaHandler(t, taskID, "done"); w.Code != http.StatusOK {
+		t.Fatalf("CompleteTask: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if n := queuedTaskCountForAgentIssue(t, issueID, agentID); n != 1 {
+		t.Fatalf("expected exactly 1 bounded follow-up after completion, got %d", n)
+	}
+	trigger, _, coalesced := taskTriggerOriginatorCoalesced(t, issueID, agentID)
+	if trigger != followupCommentID {
+		t.Fatalf("follow-up trigger = %s, want %s", trigger, followupCommentID)
+	}
+	if len(coalesced) != 0 {
+		t.Fatalf("running-owner follow-up should queue only the undelivered comment, got coalesced %v", coalesced)
+	}
+}
+
 // TestCompleteTask_NoReconcileWhenNoNewMemberComment guards against spurious
 // follow-ups: when no member comment arrived after the run started, completion
 // must not enqueue any new task.
