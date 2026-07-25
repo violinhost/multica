@@ -217,6 +217,7 @@ jobs:
           TEST_JSON="$RUNNER_TEMP/multica-go-test.json"
           grep -q '"Test":"TestCreateAgentTask_RunningOwnerGuardIsHeadScopedAndRerunSafe"' "$TEST_JSON"
           grep -q '"Test":"TestCreateAgentTask_DispatchedToRunningTransitionRaceReturnsNoRows"' "$TEST_JSON"
+          grep -q '"Test":"TestRedisLocalSkillListStore_CreateGetComplete"' "$TEST_JSON"
           if grep -E 'database not available|database unavailable|database unreachable|REDIS_TEST_URL not set|REDIS_TEST_URL unreachable|handler test fixture not initialized \(no DB\?\)|requires test database|test database not available' "$TEST_JSON" >/dev/null; then
             echo "substrate-backed tests skipped instead of running" >&2
             exit 1

@@ -14,6 +14,7 @@ grep -q 'MULTICA_REQUIRE_TEST_REDIS: "1"' "$wf"
 grep -q 'go test -json -race ./...' "$wf"
 grep -q 'TestCreateAgentTask_RunningOwnerGuardIsHeadScopedAndRerunSafe' "$wf"
 grep -q 'TestCreateAgentTask_DispatchedToRunningTransitionRaceReturnsNoRows' "$wf"
+grep -q 'TestRedisLocalSkillListStore_CreateGetComplete' "$wf"
 grep -q 'substrate-backed tests skipped instead of running' "$wf"
 
 echo "w1-backend-canary workflow contract verified"
