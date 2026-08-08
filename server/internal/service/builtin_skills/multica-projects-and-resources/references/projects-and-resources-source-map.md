@@ -14,6 +14,9 @@
   no caller-supplied repository or checkout path is accepted.
 - `server/internal/ciprofile/contract.go` is the strict fixed declaration,
   canonicalization, projection-digest, and fail-closed verifier contract.
+- `server/cmd/multica/cmd_project.go` registers `project ci-profile`
+  `register/get/enable/disable`; registration and enable take JSON from files
+  so opaque evidence is not interpreted as CLI flags.
 - `server/pkg/db/queries/project_resource.sql` is the CRUD query surface for `project_resource` rows.
 - Project resources are written into `.multica/project/resources.json` for agent workdirs.
 - `github_repo.resource_ref.ref` is lifted into daemon `RepoData.Ref` by `server/internal/handler/daemon.go`; `server/internal/daemon/daemon.go` stores it per task, and `server/internal/daemon/health.go` uses it as the default `/repo/checkout` ref when the checkout request does not explicitly pass one.

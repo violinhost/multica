@@ -91,6 +91,39 @@ var projectResourceRemoveCmd = &cobra.Command{
 	RunE:  runProjectResourceRemove,
 }
 
+var projectCIProfileCmd = &cobra.Command{
+	Use:   "ci-profile",
+	Short: "Manage a fixed native CI repository profile",
+}
+
+var projectCIProfileRegisterCmd = &cobra.Command{
+	Use:   "register <project-id> <resource-id>",
+	Short: "Register a pending native CI profile from a strict JSON request",
+	Args:  exactArgs(2),
+	RunE:  runProjectCIProfileRegister,
+}
+
+var projectCIProfileGetCmd = &cobra.Command{
+	Use:   "get <project-id> <resource-id>",
+	Short: "Discover sanitized eligibility for an exact immutable revision",
+	Args:  exactArgs(2),
+	RunE:  runProjectCIProfileGet,
+}
+
+var projectCIProfileEnableCmd = &cobra.Command{
+	Use:   "enable <project-id> <resource-id>",
+	Short: "Enable a profile using a verifier attestation JSON value",
+	Args:  exactArgs(2),
+	RunE:  runProjectCIProfileEnable,
+}
+
+var projectCIProfileDisableCmd = &cobra.Command{
+	Use:   "disable <project-id> <resource-id>",
+	Short: "Disable a native CI profile",
+	Args:  exactArgs(2),
+	RunE:  runProjectCIProfileDisable,
+}
+
 var validProjectStatuses = []string{
 	"planned", "in_progress", "paused", "completed", "cancelled",
 }
@@ -115,11 +148,16 @@ func init() {
 	projectCmd.AddCommand(projectDeleteCmd)
 	projectCmd.AddCommand(projectStatusCmd)
 	projectCmd.AddCommand(projectResourceCmd)
+	projectCmd.AddCommand(projectCIProfileCmd)
 
 	projectResourceCmd.AddCommand(projectResourceListCmd)
 	projectResourceCmd.AddCommand(projectResourceAddCmd)
 	projectResourceCmd.AddCommand(projectResourceUpdateCmd)
 	projectResourceCmd.AddCommand(projectResourceRemoveCmd)
+	projectCIProfileCmd.AddCommand(projectCIProfileRegisterCmd)
+	projectCIProfileCmd.AddCommand(projectCIProfileGetCmd)
+	projectCIProfileCmd.AddCommand(projectCIProfileEnableCmd)
+	projectCIProfileCmd.AddCommand(projectCIProfileDisableCmd)
 
 	// project list
 	projectListCmd.Flags().String("output", "table", "Output format: table or json")
@@ -157,6 +195,14 @@ func init() {
 	projectResourceAddCmd.Flags().String("ref", "", "Generic JSON resource_ref payload, or a github_repo checkout ref when used with --url")
 	projectResourceAddCmd.Flags().String("label", "", "Optional human-readable label")
 	projectResourceAddCmd.Flags().String("output", "json", "Output format: table or json")
+
+	projectCIProfileRegisterCmd.Flags().String("request-file", "", "Path to strict ci.repository-profile.v1 registration JSON")
+	projectCIProfileRegisterCmd.Flags().String("output", "json", "Output format: json")
+	projectCIProfileGetCmd.Flags().String("revision", "", "Required full 40-character immutable revision")
+	projectCIProfileGetCmd.Flags().String("output", "json", "Output format: json")
+	projectCIProfileEnableCmd.Flags().String("attestation-file", "", "Path to verifier attestation JSON")
+	projectCIProfileEnableCmd.Flags().String("output", "json", "Output format: json")
+	projectCIProfileDisableCmd.Flags().String("output", "json", "Output format: json")
 
 	// project resource update — mirrors `add` flags, but every field is
 	// optional so the caller can edit one thing at a time.
@@ -523,6 +569,110 @@ func runProjectStatus(cmd *cobra.Command, args []string) error {
 // ---------------------------------------------------------------------------
 // Project resource commands
 // ---------------------------------------------------------------------------
+
+func projectCIProfilePath(ctx context.Context, client *cli.APIClient, projectInput, resourceInput string) (string, error) {
+	projectRef, err := resolveProjectID(ctx, client, projectInput)
+	if err != nil {
+		return "", fmt.Errorf("resolve project: %w", err)
+	}
+	resourceRef, err := resolveProjectResourceID(ctx, client, projectRef.ID, resourceInput)
+	if err != nil {
+		return "", fmt.Errorf("resolve project resource: %w", err)
+	}
+	return "/api/projects/" + projectRef.ID + "/resources/" + resourceRef.ID + "/ci-profile", nil
+}
+
+func runProjectCIProfileRegister(cmd *cobra.Command, args []string) error {
+	path, body, client, ctx, cancel, err := projectCIProfileInput(cmd, args, "request-file")
+	defer cancel()
+	if err != nil {
+		return err
+	}
+	var result map[string]any
+	if err := client.PostJSON(ctx, path, body, &result); err != nil {
+		return fmt.Errorf("register ci profile: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
+func runProjectCIProfileGet(cmd *cobra.Command, args []string) error {
+	revision, _ := cmd.Flags().GetString("revision")
+	if len(revision) != 40 {
+		return fmt.Errorf("--revision must be a full 40-character immutable revision")
+	}
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	path, err := projectCIProfilePath(ctx, client, args[0], args[1])
+	if err != nil {
+		return err
+	}
+	var result map[string]any
+	if err := client.GetJSON(ctx, path+"?revision="+url.QueryEscape(revision), &result); err != nil {
+		return fmt.Errorf("get ci profile: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
+func runProjectCIProfileEnable(cmd *cobra.Command, args []string) error {
+	path, body, client, ctx, cancel, err := projectCIProfileInput(cmd, args, "attestation-file")
+	defer cancel()
+	if err != nil {
+		return err
+	}
+	var result map[string]any
+	if err := client.PostJSON(ctx, path+"/enable", map[string]any{"adapter_attestation": body}, &result); err != nil {
+		return fmt.Errorf("enable ci profile: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
+func runProjectCIProfileDisable(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	path, err := projectCIProfilePath(ctx, client, args[0], args[1])
+	if err != nil {
+		return err
+	}
+	var result map[string]any
+	if err := client.PostJSON(ctx, path+"/disable", map[string]any{}, &result); err != nil {
+		return fmt.Errorf("disable ci profile: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
+func projectCIProfileInput(cmd *cobra.Command, args []string, flag string) (string, any, *cli.APIClient, context.Context, context.CancelFunc, error) {
+	pathFlag, _ := cmd.Flags().GetString(flag)
+	if strings.TrimSpace(pathFlag) == "" {
+		return "", nil, nil, nil, func() {}, fmt.Errorf("--%s is required", flag)
+	}
+	contents, err := os.ReadFile(pathFlag)
+	if err != nil {
+		return "", nil, nil, nil, func() {}, fmt.Errorf("read %s: %w", flag, err)
+	}
+	var body any
+	if err := json.Unmarshal(contents, &body); err != nil {
+		return "", nil, nil, nil, func() {}, fmt.Errorf("%s must contain JSON: %w", flag, err)
+	}
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return "", nil, nil, nil, func() {}, err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	path, err := projectCIProfilePath(ctx, client, args[0], args[1])
+	if err != nil {
+		cancel()
+		return "", nil, nil, nil, func() {}, err
+	}
+	return path, body, client, ctx, cancel, nil
+}
 
 func runProjectResourceList(cmd *cobra.Command, args []string) error {
 	client, err := newAPIClient(cmd)

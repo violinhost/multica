@@ -56,9 +56,18 @@ multica project resource add <project-id> --type local_directory --local-path <a
 multica project resource update <project-id> <resource-id> --url <new-github-url> --output json
 multica project resource update <project-id> <resource-id> --ref <branch-or-sha> --output json
 multica project resource remove <project-id> <resource-id> --output json
+multica project ci-profile register <project-id> <resource-id> --request-file <strict-request.json> --output json
+multica project ci-profile get <project-id> <resource-id> --revision <40-lowercase-hex-sha> --output json
+multica project ci-profile enable <project-id> <resource-id> --attestation-file <opaque-attestation.json> --output json
+multica project ci-profile disable <project-id> <resource-id> --output json
 ```
 
 For `github_repo`, non-JSON `--ref` sets `resource_ref.ref`, the default checkout branch/tag/SHA for future tasks in that project. JSON `--ref '<json>'` remains the escape hatch for full payloads or resource types not covered by shortcuts.
+
+`project ci-profile register` accepts only the fixed profile JSON contract from a
+file. It does not accept repository, runner, provider, command, secret, or
+capacity settings. `enable` can only succeed when the server has a matching
+adapter verifier; a missing verifier is a deliberate fail-closed result.
 
 `--start-date` / `--due-date` are optional calendar days (`YYYY-MM-DD`, like issue dates). On `project update`, pass an empty string (`--start-date ""`) to clear a date; an unset flag leaves it untouched.
 
