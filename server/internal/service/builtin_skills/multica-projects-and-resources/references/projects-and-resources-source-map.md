@@ -7,7 +7,7 @@
 - `project resource add` supports shortcuts for `github_repo` (`--url`, non-JSON `--ref` for checkout ref, `--default-branch-hint`) and `local_directory` (`--local-path`, `--daemon-id`, `--ref-label`), or generic JSON `--ref '<json>'`.
 - `project resource update` merges shortcut edits with existing `resource_ref` so a partial edit does not clobber required fields; non-JSON `--ref` updates `github_repo.resource_ref.ref`.
 - `server/cmd/server/router.go` exposes `/api/projects` plus `/api/projects/{projectId}/resources` routes.
-- `server/cmd/multica/cmd_managed_action.go` registers the fixed `managed-action discover` and `managed-action start --request-file` CLI surface; `server/cmd/server/router.go` exposes project-scoped discovery and invocation under `/api/managed-actions`.
+- `server/cmd/multica/cmd_managed_action.go` registers the fixed `managed-action discover`, owner/admin `managed-action configure <project-id> --enabled=<bool>`, and `managed-action start --request-file` CLI surface; `server/cmd/server/router.go` exposes project-scoped discovery, enablement, and invocation under `/api/managed-actions`.
 - `server/internal/managedaction/service.go` validates that each requested resource ID belongs to the project before materializing the dispatch, child issue, task, or outbox row.
 - `server/pkg/db/queries/project_resource.sql` is the CRUD query surface for `project_resource` rows.
 - Project resources are written into `.multica/project/resources.json` for agent workdirs.

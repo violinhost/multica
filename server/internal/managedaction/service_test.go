@@ -36,6 +36,29 @@ func TestReceiptJSONIncludesEveryScopeIdentity(t *testing.T) {
 	}
 }
 
+func TestCapabilityJSONUsesStableSnakeCase(t *testing.T) {
+	encoded, err := json.Marshal(Capability{Key: ActionKey, Version: ActionVersion, Workflow: WorkflowW1, Enabled: true})
+	if err != nil {
+		t.Fatalf("marshal capability: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("decode capability: %v", err)
+	}
+	for key, want := range map[string]any{
+		"key": ActionKey, "version": ActionVersion, "workflow": WorkflowW1, "enabled": true,
+	} {
+		if got[key] != want {
+			t.Errorf("capability %s = %#v, want %#v", key, got[key], want)
+		}
+	}
+	for _, legacy := range []string{"Key", "Version", "Workflow", "Enabled"} {
+		if _, ok := got[legacy]; ok {
+			t.Errorf("capability emitted non-ABI field %q", legacy)
+		}
+	}
+}
+
 func TestRegistryIsFixedAndVersioned(t *testing.T) {
 	spec, ok := FindSpec(ActionKey, ActionVersion)
 	if !ok || spec.Workflow != WorkflowW1 {

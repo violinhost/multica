@@ -1150,6 +1150,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			r.Route("/api/managed-actions", func(r chi.Router) {
 				r.Get("/projects/{projectId}", h.ListManagedActionCapabilities)
+				r.Put("/projects/{projectId}/enablement", h.SetManagedActionEnablement)
 				r.Post("/start", h.StartManagedAction)
 			})
 

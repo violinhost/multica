@@ -24,13 +24,34 @@ func (v acceptingVerifier) VerifyManagedAction(context.Context, json.RawMessage,
 
 type managedWakeup struct {
 	mu    sync.Mutex
-	calls int
+	calls []managedWakeupCall
 }
 
-func (w *managedWakeup) NotifyTaskAvailable(string, string) {
+type managedWakeupCall struct {
+	runtimeID string
+	taskID    string
+}
+
+func (w *managedWakeup) NotifyTaskAvailable(runtimeID, taskID string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.calls++
+	w.calls = append(w.calls, managedWakeupCall{runtimeID: runtimeID, taskID: taskID})
+}
+
+func (w *managedWakeup) taskIDs() map[string]struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ids := make(map[string]struct{}, len(w.calls))
+	for _, call := range w.calls {
+		ids[call.taskID] = struct{}{}
+	}
+	return ids
+}
+
+func (w *managedWakeup) count() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.calls)
 }
 
 func managedActionPool(t *testing.T) *pgxpool.Pool {
@@ -90,9 +111,6 @@ func newManagedFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool) ma
 	if err := pool.QueryRow(ctx, `INSERT INTO project_resource (workspace_id,project_id,resource_type,resource_ref,position,created_by) VALUES ($1,$2,'github_repo','{"url":"git@github.com:example/repo.git","ref":"main"}'::jsonb,0,$3) RETURNING id`, f.workspaceID, f.projectID, f.actorID).Scan(&f.resourceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO managed_action_enablement (workspace_id,project_id,action_key,enabled) VALUES ($1,$2,$3,true)`, f.workspaceID, f.projectID, ActionKey); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM managed_action_lane_observation WHERE dispatch_id IN (SELECT id FROM managed_action_dispatch WHERE workspace_id=$1)`, f.workspaceID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM managed_action_outbox WHERE dispatch_id IN (SELECT id FROM managed_action_dispatch WHERE workspace_id=$1)`, f.workspaceID)
@@ -142,13 +160,26 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 
 	t.Run("validation failures mutate nothing", func(t *testing.T) {
 		before := managedCounts(t, ctx, pool, fixture.workspaceID)
-		cases := []Request{fixture.request("unknown"), fixture.request("malformed"), fixture.request("foreign")}
-		cases[0].ActionKey = "unknown"
-		cases[1].RevisionFacts = json.RawMessage(`{"revision":"not-a-sha"}`)
-		cases[2].ResourceIDs = []string{"00000000-0000-0000-0000-000000000000"}
-		for _, req := range cases {
-			if _, err := svc.Start(ctx, req); err == nil {
-				t.Fatalf("Start(%s) succeeded", req.IdempotencyKey)
+		if _, err := svc.Start(ctx, fixture.request("disabled")); !errors.Is(err, ErrActionDisabled) {
+			t.Fatalf("disabled action = %v", err)
+		}
+		if _, err := svc.SetEnabled(ctx, util.MustParseUUID(fixture.workspaceID), util.MustParseUUID(fixture.projectID), true); err != nil {
+			t.Fatal(err)
+		}
+		cases := []struct {
+			req  Request
+			want error
+		}{
+			{req: fixture.request("unknown"), want: ErrUnknownAction},
+			{req: fixture.request("malformed"), want: ErrInvalidRequest},
+			{req: fixture.request("foreign"), want: ErrInvalidRequest},
+		}
+		cases[0].req.ActionKey = "unknown"
+		cases[1].req.RevisionFacts = json.RawMessage(`{"revision":"not-a-sha"}`)
+		cases[2].req.ResourceIDs = []string{"00000000-0000-0000-0000-000000000000"}
+		for _, tc := range cases {
+			if _, err := svc.Start(ctx, tc.req); !errors.Is(err, tc.want) {
+				t.Fatalf("Start(%s) error = %v, want %v", tc.req.IdempotencyKey, err, tc.want)
 			}
 		}
 		unavailable := NewService(queries, pool, pool, nil, nil)
@@ -158,15 +189,6 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 		invalid := NewService(queries, pool, pool, acceptingVerifier{err: errors.New("stale")}, nil)
 		if _, err := invalid.Start(ctx, fixture.request("invalid-verifier")); !errors.Is(err, ErrAuthorityInvalid) {
 			t.Fatalf("invalid verifier = %v", err)
-		}
-		if _, err := pool.Exec(ctx, `UPDATE managed_action_enablement SET enabled=false WHERE workspace_id=$1 AND project_id=$2 AND action_key=$3`, fixture.workspaceID, fixture.projectID, ActionKey); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.Start(ctx, fixture.request("disabled")); !errors.Is(err, ErrActionDisabled) {
-			t.Fatalf("disabled action = %v", err)
-		}
-		if _, err := pool.Exec(ctx, `UPDATE managed_action_enablement SET enabled=true WHERE workspace_id=$1 AND project_id=$2 AND action_key=$3`, fixture.workspaceID, fixture.projectID, ActionKey); err != nil {
-			t.Fatal(err)
 		}
 		if after := managedCounts(t, ctx, pool, fixture.workspaceID); after != before {
 			t.Fatalf("validation mutated rows: before=%v after=%v", before, after)
@@ -185,6 +207,7 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 		t.Fatalf("replay receipt=%+v err=%v, want %+v", replayed, err, receipt)
 	}
 
+	var race Receipt
 	t.Run("concurrent same key converges", func(t *testing.T) {
 		const workers = 2
 		start := make(chan struct{})
@@ -206,10 +229,34 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 				t.Fatalf("race receipts diverged: %+v %+v", first, r)
 			}
 		}
+		race = first
 		if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{2, 2, 2, 2} {
 			t.Fatalf("race counts = %v", got)
 		}
 	})
+
+	// A request accepted after the service is already running wakes its own
+	// task immediately. The earlier accepted/race rows remain pending to model
+	// a prior wakeup outage and must not be redelivered by this fast path.
+	wakeNow := &managedWakeup{}
+	live := NewService(queries, pool, pool, acceptingVerifier{}, &service.TaskService{Wakeup: wakeNow})
+	normal, err := live.Start(ctx, fixture.request("normal"))
+	if err != nil {
+		t.Fatalf("normal Start: %v", err)
+	}
+	if wakeNow.count() != 1 {
+		t.Fatalf("normal-start wakeup calls = %d, want 1", wakeNow.count())
+	}
+	if _, ok := wakeNow.taskIDs()[normal.TaskID]; !ok {
+		t.Fatalf("normal-start did not wake task %s", normal.TaskID)
+	}
+	var normalStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM managed_action_outbox WHERE dispatch_id=$1`, util.MustParseUUID(normal.DispatchID)).Scan(&normalStatus); err != nil || normalStatus != "delivered" {
+		t.Fatalf("normal outbox status=%q err=%v", normalStatus, err)
+	}
+	if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{3, 3, 3, 3} {
+		t.Fatalf("normal-start counts = %v", got)
+	}
 
 	t.Run("every materialization boundary rolls back", func(t *testing.T) {
 		for _, boundary := range []string{"dispatch", "child", "task", "outbox"} {
@@ -223,7 +270,7 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 			if _, err := broken.Start(ctx, fixture.request("rollback-"+boundary)); err == nil {
 				t.Fatalf("%s did not fail", boundary)
 			}
-			if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{2, 2, 2, 2} {
+			if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{3, 3, 3, 3} {
 				t.Fatalf("%s leaked rows: %v", boundary, got)
 			}
 		}
@@ -234,8 +281,13 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 		restarted := NewService(queries, pool, pool, acceptingVerifier{}, &service.TaskService{Wakeup: wake})
 		restarted.Reconcile(ctx)
 		restarted.Reconcile(ctx)
-		if wake.calls != 1 {
-			t.Fatalf("wakeup calls = %d, want 1", wake.calls)
+		if wake.count() != 2 {
+			t.Fatalf("restart wakeup calls = %d, want 2 pending dispatches", wake.count())
+		}
+		for _, taskID := range []string{receipt.TaskID, race.TaskID} {
+			if _, ok := wake.taskIDs()[taskID]; !ok {
+				t.Fatalf("restart did not wake pending task %s", taskID)
+			}
 		}
 		var status string
 		if err := pool.QueryRow(ctx, `SELECT status FROM managed_action_outbox WHERE dispatch_id=$1`, util.MustParseUUID(receipt.DispatchID)).Scan(&status); err != nil || status != "delivered" {
@@ -275,7 +327,7 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 		if _, err := svc.Start(ctx, req); err != nil {
 			t.Fatal(err)
 		}
-		if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{3, 3, 3, 3} {
+		if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{4, 4, 4, 4} {
 			t.Fatalf("parent isolation counts = %v", got)
 		}
 
@@ -286,7 +338,7 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 		if err := pool.QueryRow(ctx, `INSERT INTO project_resource (workspace_id,project_id,resource_type,resource_ref,position,created_by) VALUES ($1,$2,'github_repo','{"url":"git@github.com:example/other.git","ref":"main"}'::jsonb,0,$3) RETURNING id`, fixture.workspaceID, otherProject, fixture.actorID).Scan(&otherResource); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := pool.Exec(ctx, `INSERT INTO managed_action_enablement (workspace_id,project_id,action_key,enabled) VALUES ($1,$2,$3,true)`, fixture.workspaceID, otherProject, ActionKey); err != nil {
+		if _, err := svc.SetEnabled(ctx, util.MustParseUUID(fixture.workspaceID), util.MustParseUUID(otherProject), true); err != nil {
 			t.Fatal(err)
 		}
 		if err := pool.QueryRow(ctx, `INSERT INTO issue (workspace_id,title,status,priority,creator_type,creator_id,number,position,project_id) VALUES ($1,'Other project parent','todo','high','member',$2,900003,2,$3) RETURNING id`, fixture.workspaceID, fixture.actorID, otherProject).Scan(&projectParent); err != nil {
@@ -297,7 +349,7 @@ func TestManagedActionDBAcceptance(t *testing.T) {
 		if _, err := svc.Start(ctx, projectRequest); err != nil {
 			t.Fatal(err)
 		}
-		if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{4, 4, 4, 4} {
+		if got := managedCounts(t, ctx, pool, fixture.workspaceID); got != [4]int{5, 5, 5, 5} {
 			t.Fatalf("project isolation counts = %v", got)
 		}
 	})

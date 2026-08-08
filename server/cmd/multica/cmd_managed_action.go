@@ -29,11 +29,20 @@ var managedActionStartCmd = &cobra.Command{
 	RunE:  runManagedActionStart,
 }
 
+var managedActionConfigureCmd = &cobra.Command{
+	Use:   "configure <project-id>",
+	Short: "Enable or disable the fixed managed action for a project",
+	Args:  exactArgs(1),
+	RunE:  runManagedActionConfigure,
+}
+
 func init() {
-	managedActionCmd.AddCommand(managedActionDiscoverCmd, managedActionStartCmd)
+	managedActionCmd.AddCommand(managedActionDiscoverCmd, managedActionStartCmd, managedActionConfigureCmd)
 	managedActionDiscoverCmd.Flags().String("output", "json", "Output format: json or table")
 	managedActionStartCmd.Flags().String("request-file", "", "Path to the versioned managed-action request JSON (required)")
 	managedActionStartCmd.Flags().String("output", "json", "Output format: json")
+	managedActionConfigureCmd.Flags().Bool("enabled", false, "Enable the action for this project")
+	managedActionConfigureCmd.Flags().String("output", "json", "Output format: json")
 }
 
 func runManagedActionDiscover(cmd *cobra.Command, args []string) error {
@@ -78,4 +87,26 @@ func runManagedActionStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("start managed action: %w", err)
 	}
 	return cli.PrintJSON(os.Stdout, receipt)
+}
+
+func runManagedActionConfigure(cmd *cobra.Command, args []string) error {
+	if !cmd.Flags().Changed("enabled") {
+		return fmt.Errorf("--enabled is required")
+	}
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	project, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve project: %w", err)
+	}
+	enabled, _ := cmd.Flags().GetBool("enabled")
+	var response map[string]any
+	if err := client.PutJSON(ctx, "/api/managed-actions/projects/"+project.ID+"/enablement", map[string]bool{"enabled": enabled}, &response); err != nil {
+		return fmt.Errorf("configure managed action: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, response)
 }

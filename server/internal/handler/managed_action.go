@@ -9,6 +9,10 @@ import (
 	"github.com/multica-ai/multica/server/internal/managedaction"
 )
 
+type managedActionEnablementRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
 // ListManagedActionCapabilities exposes only the fixed managed-action specs
 // enabled for a project. It is deliberately project-scoped: clients must not
 // infer an action is permitted from a global catalog entry.
@@ -28,6 +32,39 @@ func (h *Handler) ListManagedActionCapabilities(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"actions": caps})
+}
+
+// SetManagedActionEnablement configures the fixed action for one project.
+// Enablement changes workflow admission, so only workspace owners and admins
+// may make this durable project-scoped change.
+func (h *Handler) SetManagedActionEnablement(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	ws, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace_id")
+	if !ok {
+		return
+	}
+	if _, ok := h.requireWorkspaceRole(w, r, workspaceID, "project not found in this workspace", "owner", "admin"); !ok {
+		return
+	}
+	projectID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "projectId"), "project_id")
+	if !ok {
+		return
+	}
+	var req managedActionEnablementRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "enabled is required")
+		return
+	}
+	capability, err := h.ManagedActionService.SetEnabled(r.Context(), ws, projectID, *req.Enabled)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found in this workspace")
+		return
+	}
+	writeJSON(w, http.StatusOK, capability)
 }
 
 // StartManagedAction accepts the narrow W1 native request. The service owns

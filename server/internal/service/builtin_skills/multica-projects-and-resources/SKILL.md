@@ -28,12 +28,17 @@ selected IDs in the versioned request together with immutable revision facts:
 
 ```bash
 multica managed-action discover <project-id> --output json
+multica managed-action configure <project-id> --enabled=true --output json
 multica managed-action start --request-file ./managed-action-request.json --output json
 ```
 
 Discovery is project-scoped. An action that is absent or disabled is not
 authorized, and a resource ID that is not a member of the requested project is
 rejected before any child issue or native task is created.
+
+Managed actions are disabled until a workspace owner or admin enables the
+fixed action for the project. `managed-action configure` is the supported
+native configuration path; it does not accept free-form action keys.
 
 ## Core model
 

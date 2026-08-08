@@ -89,8 +89,10 @@ type Receipt struct {
 }
 
 type Capability struct {
-	Key, Version, Workflow string
-	Enabled                bool
+	Key      string `json:"key"`
+	Version  string `json:"version"`
+	Workflow string `json:"workflow"`
+	Enabled  bool   `json:"enabled"`
 }
 
 type Service struct {
@@ -122,6 +124,22 @@ func (s *Service) Capabilities(ctx context.Context, workspaceID, projectID pgtyp
 		}
 	}
 	return []Capability{{Key: ActionKey, Version: ActionVersion, Workflow: WorkflowW1, Enabled: enabled}}, nil
+}
+
+// SetEnabled changes the fixed action's project-scoped capability. It is the
+// native configuration path; callers must enforce their own workspace role.
+func (s *Service) SetEnabled(ctx context.Context, workspaceID, projectID pgtype.UUID, enabled bool) (Capability, error) {
+	if _, err := s.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{ID: projectID, WorkspaceID: workspaceID}); err != nil {
+		return Capability{}, fmt.Errorf("project: %w", err)
+	}
+	_, err := s.DB.Exec(ctx, `INSERT INTO managed_action_enablement (workspace_id, project_id, action_key, enabled)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (workspace_id, project_id, action_key)
+		DO UPDATE SET enabled=EXCLUDED.enabled, updated_at=now()`, workspaceID, projectID, ActionKey, enabled)
+	if err != nil {
+		return Capability{}, fmt.Errorf("set managed action enablement: %w", err)
+	}
+	return Capability{Key: ActionKey, Version: ActionVersion, Workflow: WorkflowW1, Enabled: enabled}, nil
 }
 
 func (s *Service) Start(ctx context.Context, req Request) (Receipt, error) {
@@ -229,7 +247,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (workspace_id,projec
 	if _, err := tx.Exec(ctx, `UPDATE managed_action_dispatch SET child_issue_id=$2, task_id=$3 WHERE id=$1`, dispatchID, child.ID, task.ID); err != nil {
 		return Receipt{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO managed_action_outbox (dispatch_id,task_id,runtime_id) VALUES ($1,$2,$3)`, dispatchID, task.ID, agent.RuntimeID); err != nil {
+	var outboxID pgtype.UUID
+	if err := tx.QueryRow(ctx, `INSERT INTO managed_action_outbox (dispatch_id,task_id,runtime_id) VALUES ($1,$2,$3) RETURNING id`, dispatchID, task.ID, agent.RuntimeID).Scan(&outboxID); err != nil {
 		return Receipt{}, err
 	}
 	if err := s.materializationBoundary("outbox"); err != nil {
@@ -239,6 +258,9 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (workspace_id,projec
 		return Receipt{}, fmt.Errorf("commit dispatch: %w", err)
 	}
 	r := Receipt{DispatchID: util.UUIDToString(dispatchID), WorkspaceID: req.WorkspaceID, ProjectID: req.ProjectID, ParentIssueID: req.ParentIssueID, ActionKey: req.ActionKey, Generation: 1, State: "analysis_queued", ChildIssueID: util.UUIDToString(child.ID), TaskID: util.UUIDToString(task.ID)}
+	// The receipt is durable before this best-effort wakeup. A missing or
+	// unavailable notifier leaves the outbox pending for startup recovery.
+	s.deliverOutbox(ctx, outboxID)
 	return r, nil
 }
 
@@ -256,23 +278,38 @@ func (s *Service) Reconcile(ctx context.Context) {
 	if s.TaskService.Wakeup == nil {
 		return
 	}
-	rows, err := s.DB.Query(ctx, `SELECT o.id, o.task_id, o.runtime_id FROM managed_action_outbox o WHERE o.status='pending' OR (o.status='delivering' AND o.updated_at < now() - interval '1 minute') ORDER BY o.created_at LIMIT 100`)
+	rows, err := s.DB.Query(ctx, `SELECT o.id FROM managed_action_outbox o WHERE o.status='pending' OR (o.status='delivering' AND o.updated_at < now() - interval '1 minute') ORDER BY o.created_at LIMIT 100`)
 	if err != nil {
 		return
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var outboxID, taskID, runtimeID pgtype.UUID
-		if rows.Scan(&outboxID, &taskID, &runtimeID) != nil {
+		var outboxID pgtype.UUID
+		if rows.Scan(&outboxID) != nil {
 			continue
 		}
-		var claimed bool
-		if err := s.DB.QueryRow(ctx, `UPDATE managed_action_outbox SET status='delivering', attempts=attempts+1, updated_at=now() WHERE id=$1 AND (status='pending' OR (status='delivering' AND updated_at < now() - interval '1 minute')) RETURNING true`, outboxID).Scan(&claimed); err != nil || !claimed {
-			continue
-		}
-		s.TaskService.Wakeup.NotifyTaskAvailable(util.UUIDToString(runtimeID), util.UUIDToString(taskID))
-		_, _ = s.DB.Exec(ctx, `UPDATE managed_action_outbox SET status='delivered', delivered_at=now(), updated_at=now() WHERE id=$1 AND status='delivering'`, outboxID)
+		s.deliverOutbox(ctx, outboxID)
 	}
+}
+
+// deliverOutbox claims and wakes one already-materialized task. It is safe to
+// call after commit and during restart reconciliation: the conditional update
+// ensures only one caller wakes a pending row, and this path never allocates
+// another dispatch, child issue, task, or generation.
+func (s *Service) deliverOutbox(ctx context.Context, outboxID pgtype.UUID) {
+	if s == nil || s.DB == nil || s.TaskService == nil || s.TaskService.Wakeup == nil {
+		return
+	}
+	var taskID, runtimeID pgtype.UUID
+	err := s.DB.QueryRow(ctx, `UPDATE managed_action_outbox
+		SET status='delivering', attempts=attempts+1, updated_at=now()
+		WHERE id=$1 AND (status='pending' OR (status='delivering' AND updated_at < now() - interval '1 minute'))
+		RETURNING task_id, runtime_id`, outboxID).Scan(&taskID, &runtimeID)
+	if err != nil {
+		return
+	}
+	s.TaskService.Wakeup.NotifyTaskAvailable(util.UUIDToString(runtimeID), util.UUIDToString(taskID))
+	_, _ = s.DB.Exec(ctx, `UPDATE managed_action_outbox SET status='delivered', delivered_at=now(), updated_at=now() WHERE id=$1 AND status='delivering'`, outboxID)
 }
 
 // ObserveTaskTerminal records the native task outcome for this dispatch. It is
@@ -304,7 +341,7 @@ func (s *Service) ObserveTaskTerminal(ctx context.Context, task db.AgentTaskQueu
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.Exec(ctx, `UPDATE managed_action_dispatch SET state=$2, terminal_observation=jsonb_build_object('task_id',$3::text,'task_status',$4), updated_at=now() WHERE id=$1 AND state NOT IN ('succeeded','failed')`, dispatchID, state, task.ID, task.Status)
+	_, err = s.DB.Exec(ctx, `UPDATE managed_action_dispatch SET state=$2, terminal_observation=jsonb_build_object('task_id',$3::text,'task_status',$4::text), updated_at=now() WHERE id=$1 AND state NOT IN ('succeeded','failed')`, dispatchID, state, task.ID, task.Status)
 	return err
 }
 
