@@ -51,6 +51,22 @@ func TestCanonicalRepositoryIdentity(t *testing.T) {
 	}
 }
 
+func TestRequestDigestBindsIdempotencyPayloadButNormalizesOpaqueJSON(t *testing.T) {
+	r := validRegistration()
+	digest, err := RequestDigest("violinhost/multica", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AdapterAttestation = json.RawMessage(`{ "opaque": "input" }`)
+	if normalized, err := RequestDigest("violinhost/multica", r); err != nil || normalized != digest {
+		t.Fatalf("normalized digest = %q, %v; want %q", normalized, err, digest)
+	}
+	r.Revision = "1123456789abcdef0123456789abcdef01234567"
+	if changed, err := RequestDigest("violinhost/multica", r); err != nil || changed == digest {
+		t.Fatalf("changed payload digest = %q, %v; want distinct", changed, err)
+	}
+}
+
 type verifier struct{ attestation Attestation }
 
 func (v verifier) Verify(context.Context, Evidence) (Attestation, error) { return v.attestation, nil }

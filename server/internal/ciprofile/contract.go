@@ -25,6 +25,9 @@ const (
 
 var (
 	ErrInvalidRequest      = errors.New("invalid ci repository-profile request")
+	ErrIdempotencyConflict = errors.New("ci repository-profile idempotency conflict")
+	ErrNotFound            = errors.New("ci repository-profile not found")
+	ErrStoreUnavailable    = errors.New("ci repository-profile store unavailable")
 	ErrVerifierUnavailable = errors.New("ci repository-profile verifier unavailable")
 	ErrInvalidAttestation  = errors.New("ci repository-profile attestation rejected")
 	shaPattern             = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -126,6 +129,29 @@ func ProjectionDigest(repository string, r Registration) (string, error) {
 		ServiceClasses  []string `json:"service_classes"`
 		HostedFallback  bool     `json:"hosted_fallback"`
 	}{repository, r.SchemaVersion, r.Revision, r.WorkflowClass, r.WorkflowVersion, r.JobClass, r.CheckName, r.ServiceClasses, r.HostedFallback}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// RequestDigest binds an idempotency key to the complete immutable request.
+// The opaque attestation is normalized and hashed, never persisted.
+func RequestDigest(repository string, r Registration) (string, error) {
+	if err := r.Validate(); err != nil {
+		return "", err
+	}
+	var attestation any
+	if err := json.Unmarshal(r.AdapterAttestation, &attestation); err != nil {
+		return "", fmt.Errorf("%w: adapter_attestation is required", ErrInvalidRequest)
+	}
+	payload := struct {
+		Repository   string `json:"repository"`
+		Registration `json:"registration"`
+	}{Repository: repository, Registration: r}
+	payload.AdapterAttestation, _ = json.Marshal(attestation)
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return "", err

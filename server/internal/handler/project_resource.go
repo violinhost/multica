@@ -493,6 +493,9 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if _, ok := h.requireWorkspaceRole(w, r, uuidToString(project.WorkspaceID), "project not found", "owner", "admin"); !ok {
+		return
+	}
 	resourceUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "resourceId"), "resource id")
 	if !ok {
 		return
@@ -511,6 +514,25 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 	if uuidToString(resource.ProjectID) != uuidToString(project.ID) {
 		writeError(w, http.StatusNotFound, "project resource not found")
 		return
+	}
+	// There are intentionally no FK cascades from project_resource. Tombstone
+	// an attached CI profile before deleting the resource so a failed or stale
+	// resource cannot remain discovery-eligible.
+	if resource.ResourceType == "github_repo" {
+		actor, err := parseUUIDLoose(userID)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid actor")
+			return
+		}
+		scope, err := ciProfileScopeForDeletedResource(project, resource, actor)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "github repository resource is malformed")
+			return
+		}
+		if err := h.ciProfileAggregate().TombstoneResource(r.Context(), scope); err != nil {
+			writeCIProfileError(w, err)
+			return
+		}
 	}
 	if err := h.Queries.DeleteProjectResource(r.Context(), resource.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project resource")

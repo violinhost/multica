@@ -7,16 +7,21 @@
 - `project resource add` supports shortcuts for `github_repo` (`--url`, non-JSON `--ref` for checkout ref, `--default-branch-hint`) and `local_directory` (`--local-path`, `--daemon-id`, `--ref-label`), or generic JSON `--ref '<json>'`.
 - `project resource update` merges shortcut edits with existing `resource_ref` so a partial edit does not clobber required fields; non-JSON `--ref` updates `github_repo.resource_ref.ref`.
 - `server/cmd/server/router.go` exposes `/api/projects` plus `/api/projects/{projectId}/resources` routes.
-- `server/internal/handler/ci_repository_profile.go` owns the scoped native
-  `ci.repository-profile.v1` endpoints below a `github_repo` project resource:
-  register, exact-SHA sanitized discovery, verifier-gated enable, and disable.
-  It derives canonical GitHub identity from `project_resource.resource_ref.url`;
-  no caller-supplied repository or checkout path is accepted.
+- `server/internal/handler/ci_repository_profile.go` owns strict transport,
+  owner/admin lifecycle authorization, and member-safe sanitized discovery for
+  the scoped native `ci.repository-profile.v1` endpoints below a `github_repo`
+  project resource. It derives canonical GitHub identity from
+  `project_resource.resource_ref.url`; no caller-supplied repository or
+  checkout path is accepted.
 - `server/internal/ciprofile/contract.go` is the strict fixed declaration,
-  canonicalization, projection-digest, and fail-closed verifier contract.
+  canonicalization, projection/request digest, and fail-closed verifier contract.
+- `server/internal/ciprofile/aggregate.go` owns registration/replay,
+  transaction boundaries, lifecycle/audit persistence, exact-SHA discovery,
+  and safe tombstoning before a `github_repo` resource is deleted.
 - `server/cmd/multica/cmd_project.go` registers `project ci-profile`
-  `register/get/enable/disable`; registration and enable take JSON from files
-  so opaque evidence is not interpreted as CLI flags.
+  `register/get/enable/disable`; registration and enable take JSON from files,
+  preserving raw JSON for the server's strict decoder so opaque evidence is not
+  interpreted as CLI flags.
 - `server/pkg/db/queries/project_resource.sql` is the CRUD query surface for `project_resource` rows.
 - Project resources are written into `.multica/project/resources.json` for agent workdirs.
 - `github_repo.resource_ref.ref` is lifted into daemon `RepoData.Ref` by `server/internal/handler/daemon.go`; `server/internal/daemon/daemon.go` stores it per task, and `server/internal/daemon/health.go` uses it as the default `/repo/checkout` ref when the checkout request does not explicitly pass one.

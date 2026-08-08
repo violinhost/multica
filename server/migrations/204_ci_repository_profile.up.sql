@@ -1,9 +1,8 @@
--- Native CI repository-profile aggregate (VEL-4636).
+-- Native CI repository-profile aggregate (VEL-4636).  This migration follows
+-- the managed-action migrations 202/203 from VEL-4633.
 --
--- These rows deliberately do not reference project_resource or workspace with
--- foreign keys. Repository membership, authorization, and cleanup remain in
--- the application layer. Profiles are pending until an adapter independently
--- verifies the immutable declaration; no row here is dispatch authority.
+-- No foreign keys are used: a project resource can be deleted independently,
+-- and application code explicitly tombstones the dependent profile first.
 
 CREATE TABLE ci_repository_profile (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,8 +24,7 @@ CREATE TABLE ci_repository_profile (
     adapter_attestation_reference TEXT,
     created_by UUID NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (workspace_id, project_id, resource_id, schema_version)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE ci_repository_profile_receipt (
@@ -35,11 +33,11 @@ CREATE TABLE ci_repository_profile_receipt (
     project_id UUID NOT NULL,
     resource_id UUID NOT NULL,
     request_id TEXT NOT NULL,
+    request_digest CHAR(64) NOT NULL CHECK (request_digest ~ '^[0-9a-f]{64}$'),
     profile_id UUID NOT NULL,
     generation INTEGER NOT NULL CHECK (generation > 0),
     created_by UUID NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (workspace_id, project_id, resource_id, request_id)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE ci_repository_profile_audit (
@@ -50,6 +48,7 @@ CREATE TABLE ci_repository_profile_audit (
     resource_id UUID NOT NULL,
     generation INTEGER NOT NULL CHECK (generation > 0),
     action TEXT NOT NULL CHECK (action IN ('register', 'enable', 'disable')),
+    source TEXT NOT NULL,
     actor_type TEXT NOT NULL CHECK (actor_type = 'member'),
     actor_id UUID NOT NULL,
     projection_digest CHAR(64) NOT NULL CHECK (projection_digest ~ '^[0-9a-f]{64}$'),

@@ -64,9 +64,11 @@ multica project ci-profile disable <project-id> <resource-id> --output json
 
 For `github_repo`, non-JSON `--ref` sets `resource_ref.ref`, the default checkout branch/tag/SHA for future tasks in that project. JSON `--ref '<json>'` remains the escape hatch for full payloads or resource types not covered by shortcuts.
 
-`project ci-profile register` accepts only the fixed profile JSON contract from a
-file. It does not accept repository, runner, provider, command, secret, or
-capacity settings. `enable` can only succeed when the server has a matching
+`project ci-profile register` preserves the JSON file byte shape for the server
+to decode strictly. It does not accept repository, runner, provider, command,
+secret, or capacity settings. Reusing a request ID with changed declaration or
+attestation input is a conflict; a replay returns the current sanitized
+lifecycle state. `enable` can only succeed when the server has a matching
 adapter verifier; a missing verifier is a deliberate fail-closed result.
 
 `--start-date` / `--due-date` are optional calendar days (`YYYY-MM-DD`, like issue dates). On `project update`, pass an empty string (`--start-date ""`) to clear a date; an unset flag leaves it untouched.

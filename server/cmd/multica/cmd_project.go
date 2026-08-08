@@ -648,7 +648,7 @@ func runProjectCIProfileDisable(cmd *cobra.Command, args []string) error {
 	return cli.PrintJSON(os.Stdout, result)
 }
 
-func projectCIProfileInput(cmd *cobra.Command, args []string, flag string) (string, any, *cli.APIClient, context.Context, context.CancelFunc, error) {
+func projectCIProfileInput(cmd *cobra.Command, args []string, flag string) (string, json.RawMessage, *cli.APIClient, context.Context, context.CancelFunc, error) {
 	pathFlag, _ := cmd.Flags().GetString(flag)
 	if strings.TrimSpace(pathFlag) == "" {
 		return "", nil, nil, nil, func() {}, fmt.Errorf("--%s is required", flag)
@@ -657,9 +657,8 @@ func projectCIProfileInput(cmd *cobra.Command, args []string, flag string) (stri
 	if err != nil {
 		return "", nil, nil, nil, func() {}, fmt.Errorf("read %s: %w", flag, err)
 	}
-	var body any
-	if err := json.Unmarshal(contents, &body); err != nil {
-		return "", nil, nil, nil, func() {}, fmt.Errorf("%s must contain JSON: %w", flag, err)
+	if !json.Valid(contents) {
+		return "", nil, nil, nil, func() {}, fmt.Errorf("%s must contain JSON", flag)
 	}
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -671,7 +670,7 @@ func projectCIProfileInput(cmd *cobra.Command, args []string, flag string) (stri
 		cancel()
 		return "", nil, nil, nil, func() {}, err
 	}
-	return path, body, client, ctx, cancel, nil
+	return path, json.RawMessage(contents), client, ctx, cancel, nil
 }
 
 func runProjectResourceList(cmd *cobra.Command, args []string) error {
