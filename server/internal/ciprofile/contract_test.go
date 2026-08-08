@@ -24,6 +24,17 @@ func TestDecodeRegistrationRejectsUnknownAndUnsafeFields(t *testing.T) {
 	}
 }
 
+func TestDecodeRegistrationRejectsDuplicateFieldsAtEveryDepth(t *testing.T) {
+	for _, body := range [][]byte{
+		[]byte(`{"schema_version":"ci.repository-profile.v1","request_id":"first","request_id":"second","workspace_id":"workspace","project_id":"project","resource_id":"resource","revision":"0123456789abcdef0123456789abcdef01234567","workflow_class":"native_ci","workflow_version":"v1","job_class":"backend","check_name":"backend","service_classes":["postgresql_pgvector","redis"],"hosted_fallback":false,"adapter_attestation":{},"source":"owner_admin"}`),
+		[]byte(`{"schema_version":"ci.repository-profile.v1","request_id":"req-1","workspace_id":"workspace","project_id":"project","resource_id":"resource","revision":"0123456789abcdef0123456789abcdef01234567","workflow_class":"native_ci","workflow_version":"v1","job_class":"backend","check_name":"backend","service_classes":["postgresql_pgvector","redis"],"hosted_fallback":false,"adapter_attestation":{"counter":1,"counter":2},"source":"owner_admin"}`),
+	} {
+		if _, err := DecodeRegistration(body); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("DecodeRegistration(%s) error = %v, want ErrInvalidRequest", body, err)
+		}
+	}
+}
+
 func TestRegistrationRejectsMutableOrNonCanonicalDeclaration(t *testing.T) {
 	for _, mutate := range []func(*Registration){
 		func(r *Registration) { r.Revision = "ABC" },
@@ -64,6 +75,44 @@ func TestRequestDigestBindsIdempotencyPayloadButNormalizesOpaqueJSON(t *testing.
 	r.Revision = "1123456789abcdef0123456789abcdef01234567"
 	if changed, err := RequestDigest("violinhost/multica", r); err != nil || changed == digest {
 		t.Fatalf("changed payload digest = %q, %v; want distinct", changed, err)
+	}
+}
+
+func TestRequestDigestCanonicalizesOpaqueJSONWithoutFloat64Collisions(t *testing.T) {
+	r := validRegistration()
+	r.AdapterAttestation = json.RawMessage(`{"z":[{"b":2,"a":1}],"counter":9007199254740992}`)
+	first, err := RequestDigest("violinhost/multica", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AdapterAttestation = json.RawMessage(` { "counter" : 9007199254740992 , "z" : [ { "a" : 1 , "b" : 2 } ] } `)
+	if reordered, err := RequestDigest("violinhost/multica", r); err != nil || reordered != first {
+		t.Fatalf("reordered digest = %q, %v; want %q", reordered, err, first)
+	}
+	r.AdapterAttestation = json.RawMessage(`{"counter":9007199254740993,"z":[{"a":1,"b":2}]}`)
+	if changed, err := RequestDigest("violinhost/multica", r); err != nil || changed == first {
+		t.Fatalf("large integer digest = %q, %v; want distinct from %q", changed, err, first)
+	}
+	r.AdapterAttestation = json.RawMessage(`{"counter":1.0}`)
+	decimal, err := RequestDigest("violinhost/multica", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AdapterAttestation = json.RawMessage(`{"counter":1}`)
+	integer, err := RequestDigest("violinhost/multica", r)
+	if err != nil || decimal == integer {
+		t.Fatalf("numeric spelling must remain lossless: decimal=%q integer=%q err=%v", decimal, integer, err)
+	}
+}
+
+func TestDecodeDisableRequestAcceptsOnlyEmptyObject(t *testing.T) {
+	if err := DecodeDisableRequest([]byte(`{}`)); err != nil {
+		t.Fatalf("empty disable request: %v", err)
+	}
+	for _, body := range [][]byte{[]byte(`{"provider":"github-hosted"}`), []byte(`[]`), []byte(`{} {}`)} {
+		if err := DecodeDisableRequest(body); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("DecodeDisableRequest(%s) error = %v, want ErrInvalidRequest", body, err)
+		}
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -30,6 +31,7 @@ var (
 	ErrStoreUnavailable    = errors.New("ci repository-profile store unavailable")
 	ErrVerifierUnavailable = errors.New("ci repository-profile verifier unavailable")
 	ErrInvalidAttestation  = errors.New("ci repository-profile attestation rejected")
+	ErrRepositoryMismatch  = errors.New("ci repository-profile repository identity mismatch")
 	shaPattern             = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
@@ -56,6 +58,9 @@ type Registration struct {
 // DecodeRegistration rejects duplicate JSON values, unknown fields, and
 // trailing input. This keeps the wire ABI narrow before any mutation occurs.
 func DecodeRegistration(data []byte) (Registration, error) {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return Registration{}, err
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var request Registration
@@ -69,6 +74,44 @@ func DecodeRegistration(data []byte) (Registration, error) {
 		return Registration{}, err
 	}
 	return request, nil
+}
+
+// DecodeEnableAttestation accepts exactly the small enable wire shape. The
+// opaque payload remains opaque to the HTTP handler but is still checked for
+// duplicate keys so two parsers cannot disagree about its meaning.
+func DecodeEnableAttestation(data []byte) (json.RawMessage, error) {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return nil, err
+	}
+	var request struct {
+		AdapterAttestation json.RawMessage `json:"adapter_attestation"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&request); err != nil || len(request.AdapterAttestation) == 0 || !json.Valid(request.AdapterAttestation) {
+		return nil, fmt.Errorf("%w: adapter_attestation is required", ErrInvalidRequest)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: request must contain one JSON object", ErrInvalidRequest)
+	}
+	return request.AdapterAttestation, nil
+}
+
+// DecodeDisableRequest permits exactly one empty JSON object. Disable has no
+// caller-controlled lifecycle input, so accepting ignored fields is unsafe.
+func DecodeDisableRequest(data []byte) error {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return err
+	}
+	var request map[string]json.RawMessage
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&request); err != nil || request == nil || len(request) != 0 {
+		return fmt.Errorf("%w: disable request must be an empty JSON object", ErrInvalidRequest)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%w: request must contain one JSON object", ErrInvalidRequest)
+	}
+	return nil
 }
 
 func (r Registration) Validate() error {
@@ -143,21 +186,146 @@ func RequestDigest(repository string, r Registration) (string, error) {
 	if err := r.Validate(); err != nil {
 		return "", err
 	}
-	var attestation any
-	if err := json.Unmarshal(r.AdapterAttestation, &attestation); err != nil {
-		return "", fmt.Errorf("%w: adapter_attestation is required", ErrInvalidRequest)
+	attestation, err := CanonicalJSON(r.AdapterAttestation)
+	if err != nil {
+		return "", err
 	}
+	r.AdapterAttestation = attestation
 	payload := struct {
 		Repository   string `json:"repository"`
 		Registration `json:"registration"`
 	}{Repository: repository, Registration: r}
-	payload.AdapterAttestation, _ = json.Marshal(attestation)
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// CanonicalJSON preserves JSON number tokens losslessly while sorting object
+// keys. It makes whitespace and key ordering irrelevant without converting
+// large integers through float64.
+func CanonicalJSON(data []byte) ([]byte, error) {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return nil, fmt.Errorf("%w: invalid JSON", ErrInvalidRequest)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: request must contain one JSON value", ErrInvalidRequest)
+	}
+	var out bytes.Buffer
+	if err := appendCanonicalJSON(&out, value); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func appendCanonicalJSON(out *bytes.Buffer, value any) error {
+	switch value := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out.WriteByte('{')
+		for i, key := range keys {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			encoded, _ := json.Marshal(key)
+			out.Write(encoded)
+			out.WriteByte(':')
+			if err := appendCanonicalJSON(out, value[key]); err != nil {
+				return err
+			}
+		}
+		out.WriteByte('}')
+	case []any:
+		out.WriteByte('[')
+		for i, item := range value {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			if err := appendCanonicalJSON(out, item); err != nil {
+				return err
+			}
+		}
+		out.WriteByte(']')
+	case json.Number:
+		out.WriteString(value.String())
+	case string, bool, nil:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		out.Write(encoded)
+	default:
+		return fmt.Errorf("%w: unsupported JSON value", ErrInvalidRequest)
+	}
+	return nil
+}
+
+func rejectDuplicateJSONKeys(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := walkJSONValue(dec); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%w: request must contain one JSON value", ErrInvalidRequest)
+	}
+	return nil
+}
+
+func walkJSONValue(dec *json.Decoder) error {
+	token, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		keys := make(map[string]struct{})
+		for dec.More() {
+			keyToken, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("JSON object key must be a string")
+			}
+			if _, exists := keys[key]; exists {
+				return fmt.Errorf("duplicate JSON field %q", key)
+			}
+			keys[key] = struct{}{}
+			if err := walkJSONValue(dec); err != nil {
+				return err
+			}
+		}
+		_, err = dec.Token()
+		return err
+	case '[':
+		for dec.More() {
+			if err := walkJSONValue(dec); err != nil {
+				return err
+			}
+		}
+		_, err = dec.Token()
+		return err
+	default:
+		return errors.New("unexpected JSON delimiter")
+	}
 }
 
 // Verifier is intentionally small. Production wiring can remain unavailable;

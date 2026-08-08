@@ -75,35 +75,38 @@ func (a *Aggregate) registerOnce(ctx context.Context, scope Scope, request Regis
 	defer tx.Rollback(ctx)
 
 	var receiptID, profileID string
-	var receiptDigest, revision, digest, status string
+	var receiptDigest, repository, revision, digest, status string
 	var generation int32
 	err = tx.QueryRow(ctx, `
 		SELECT r.id, r.profile_id, p.generation, r.request_digest,
-		       p.revision, p.projection_digest, p.status
+		       p.repository_identity, p.revision, p.projection_digest, p.status
 		FROM ci_repository_profile_receipt r
 		JOIN ci_repository_profile p ON p.id = r.profile_id
 		WHERE r.workspace_id=$1 AND r.project_id=$2 AND r.resource_id=$3 AND r.request_id=$4`,
 		scope.WorkspaceID, scope.ProjectID, scope.ResourceID, request.RequestID,
-	).Scan(&receiptID, &profileID, &generation, &receiptDigest, &revision, &digest, &status)
+	).Scan(&receiptID, &profileID, &generation, &receiptDigest, &repository, &revision, &digest, &status)
 	if err == nil {
 		if receiptDigest != requestDigest {
 			return Profile{}, false, false, ErrIdempotencyConflict
 		}
+		if repository != scope.Repository {
+			return Profile{}, false, false, ErrRepositoryMismatch
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return Profile{}, false, false, err
 		}
-		return profileResponse(profileID, receiptID, generation, scope.Repository, revision, digest, status, revision), false, false, nil
+		return profileResponse(profileID, receiptID, generation, repository, revision, digest, status, revision), false, false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Profile{}, false, false, err
 	}
 
-	var existingDigest string
-	err = tx.QueryRow(ctx, `SELECT id, generation, revision, projection_digest, status
+	var existingDigest, existingRepository string
+	err = tx.QueryRow(ctx, `SELECT id, generation, repository_identity, revision, projection_digest, status
 		FROM ci_repository_profile
 		WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4 FOR UPDATE`,
 		scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion,
-	).Scan(&profileID, &generation, &revision, &existingDigest, &status)
+	).Scan(&profileID, &generation, &existingRepository, &revision, &existingDigest, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = tx.QueryRow(ctx, `INSERT INTO ci_repository_profile
 			(workspace_id,project_id,resource_id,schema_version,repository_identity,revision,workflow_class,workflow_version,job_class,check_name,service_classes,hosted_fallback,projection_digest,created_by)
@@ -112,11 +115,13 @@ func (a *Aggregate) registerOnce(ctx context.Context, scope Scope, request Regis
 			scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion, scope.Repository, request.Revision, request.WorkflowClass, request.WorkflowVersion, request.JobClass, request.CheckName, `["postgresql_pgvector","redis"]`, projectionDigest, scope.ActorID,
 		).Scan(&profileID, &generation)
 		revision, status = request.Revision, "pending_adapter"
+	} else if err == nil && existingRepository != scope.Repository {
+		return Profile{}, false, false, ErrRepositoryMismatch
 	} else if err == nil && existingDigest != projectionDigest {
 		err = tx.QueryRow(ctx, `UPDATE ci_repository_profile
-			SET generation=generation+1, repository_identity=$2, revision=$3, projection_digest=$4,
+			SET generation=generation+1, revision=$2, projection_digest=$3,
 			    status='pending_adapter', adapter_attestation_reference=NULL, updated_at=now()
-			WHERE id=$1 RETURNING generation`, profileID, scope.Repository, request.Revision, projectionDigest).Scan(&generation)
+			WHERE id=$1 RETURNING generation`, profileID, request.Revision, projectionDigest).Scan(&generation)
 		revision, status = request.Revision, "pending_adapter"
 	}
 	if err != nil {
@@ -167,20 +172,26 @@ func (a *Aggregate) Discover(ctx context.Context, scope Scope, exactRevision str
 		return Profile{}, err
 	}
 	defer tx.Rollback(ctx)
-	var profileID, revision, digest, status string
+	var profileID, repository, revision, digest, status string
 	var generation int32
-	err = tx.QueryRow(ctx, `SELECT id,generation,revision,projection_digest,status FROM ci_repository_profile
-		WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4`, scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion).Scan(&profileID, &generation, &revision, &digest, &status)
+	err = tx.QueryRow(ctx, `SELECT id,generation,repository_identity,revision,projection_digest,status FROM ci_repository_profile
+		WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4`, scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion).Scan(&profileID, &generation, &repository, &revision, &digest, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Profile{Eligible: false, Reason: "absent"}, tx.Commit(ctx)
 	}
 	if err != nil {
 		return Profile{}, err
 	}
+	if repository != scope.Repository {
+		if err := tx.Commit(ctx); err != nil {
+			return Profile{}, err
+		}
+		return Profile{Eligible: false, Reason: "repository_mismatch"}, nil
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Profile{}, err
 	}
-	return profileResponse(profileID, "", generation, scope.Repository, revision, digest, status, exactRevision), nil
+	return profileResponse(profileID, "", generation, repository, revision, digest, status, exactRevision), nil
 }
 
 func (a *Aggregate) Enable(ctx context.Context, scope Scope, opaque []byte) (Profile, error) {
@@ -207,15 +218,67 @@ func (a *Aggregate) Disable(ctx context.Context, scope Scope) (Profile, error) {
 // receipt, and audit history prevents an orphaned resource from ever becoming
 // discovery-eligible while still satisfying the repository's no-FK rule.
 func (a *Aggregate) TombstoneResource(ctx context.Context, scope Scope) error {
-	profile, err := a.load(ctx, scope)
-	if errors.Is(err, ErrNotFound) {
+	if a == nil || a.store == nil {
+		return ErrStoreUnavailable
+	}
+	tx, err := a.store.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := a.TombstoneResourceInTx(ctx, tx, scope); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// TombstoneResourceInTx joins dependent profile cleanup to a parent resource
+// operation. Callers must commit or roll back the supplied transaction.
+func (a *Aggregate) TombstoneResourceInTx(ctx context.Context, tx pgx.Tx, scope Scope) error {
+	var id, repository, status, digest string
+	var generation int32
+	err := tx.QueryRow(ctx, `SELECT id,generation,repository_identity,status,projection_digest
+		FROM ci_repository_profile WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4 FOR UPDATE`,
+		scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion).Scan(&id, &generation, &repository, &status, &digest)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	_, err = a.transition(ctx, scope, profile, "disabled", "")
+	if repository != scope.Repository {
+		return ErrRepositoryMismatch
+	}
+	if status == "disabled" {
+		return nil
+	}
+	if _, err = tx.Exec(ctx, `UPDATE ci_repository_profile SET status='disabled',adapter_attestation_reference=NULL,updated_at=now() WHERE id=$1`, id); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO ci_repository_profile_audit
+		(profile_id,workspace_id,project_id,resource_id,generation,action,source,actor_type,actor_id,projection_digest)
+		VALUES ($1,$2,$3,$4,$5,'disable','resource_delete','member',$6,$7)`,
+		id, scope.WorkspaceID, scope.ProjectID, scope.ResourceID, generation, scope.ActorID, digest)
 	return err
+}
+
+// RejectResourceRetargetInTx prevents a profile from silently inheriting a
+// different repository URL while retaining its existing verifier evidence.
+func (a *Aggregate) RejectResourceRetargetInTx(ctx context.Context, tx pgx.Tx, scope Scope) error {
+	var repository string
+	err := tx.QueryRow(ctx, `SELECT repository_identity FROM ci_repository_profile
+		WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4 FOR UPDATE`,
+		scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion).Scan(&repository)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if repository != scope.Repository {
+		return ErrRepositoryMismatch
+	}
+	return nil
 }
 
 func (a *Aggregate) load(ctx context.Context, scope Scope) (Profile, error) {
@@ -227,20 +290,23 @@ func (a *Aggregate) load(ctx context.Context, scope Scope) (Profile, error) {
 		return Profile{}, err
 	}
 	defer tx.Rollback(ctx)
-	var id, revision, digest, status string
+	var id, repository, revision, digest, status string
 	var generation int32
-	err = tx.QueryRow(ctx, `SELECT id,generation,revision,projection_digest,status FROM ci_repository_profile
-		WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4`, scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion).Scan(&id, &generation, &revision, &digest, &status)
+	err = tx.QueryRow(ctx, `SELECT id,generation,repository_identity,revision,projection_digest,status FROM ci_repository_profile
+		WHERE workspace_id=$1 AND project_id=$2 AND resource_id=$3 AND schema_version=$4`, scope.WorkspaceID, scope.ProjectID, scope.ResourceID, SchemaVersion).Scan(&id, &generation, &repository, &revision, &digest, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Profile{}, ErrNotFound
 	}
 	if err != nil {
 		return Profile{}, err
 	}
+	if repository != scope.Repository {
+		return Profile{}, ErrRepositoryMismatch
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Profile{}, err
 	}
-	return profileResponse(id, "", generation, scope.Repository, revision, digest, status, revision), nil
+	return profileResponse(id, "", generation, repository, revision, digest, status, revision), nil
 }
 
 func (a *Aggregate) transition(ctx context.Context, scope Scope, previous Profile, status, reference string) (Profile, error) {
@@ -250,7 +316,7 @@ func (a *Aggregate) transition(ctx context.Context, scope Scope, previous Profil
 	}
 	defer tx.Rollback(ctx)
 	ct, err := tx.Exec(ctx, `UPDATE ci_repository_profile SET status=$2,adapter_attestation_reference=$3,updated_at=now()
-		WHERE id=$1 AND generation=$4 AND revision=$5 AND projection_digest=$6`, previous.ProfileID, status, reference, previous.Generation, previous.Revision, previous.ProjectionDigest)
+		WHERE id=$1 AND generation=$4 AND revision=$5 AND projection_digest=$6 AND repository_identity=$7`, previous.ProfileID, status, reference, previous.Generation, previous.Revision, previous.ProjectionDigest, previous.Repository)
 	if err != nil {
 		return Profile{}, err
 	}

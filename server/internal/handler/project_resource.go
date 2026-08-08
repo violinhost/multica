@@ -414,12 +414,38 @@ func (h *Handler) UpdateProjectResource(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	updated, err := h.Queries.UpdateProjectResource(r.Context(), db.UpdateProjectResourceParams{
+	update := db.UpdateProjectResourceParams{
 		ID:          existing.ID,
 		ResourceRef: nextRef,
 		Label:       nextLabel,
 		Position:    nextPosition,
-	})
+	}
+	var updated db.ProjectResource
+	if existing.ResourceType == "github_repo" {
+		candidate := existing
+		candidate.ResourceRef = nextRef
+		scope, err := ciProfileScopeForResource(project, candidate, pgtype.UUID{})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "github repository resource is malformed")
+			return
+		}
+		tx, err := h.TxStarter.Begin(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update project resource")
+			return
+		}
+		defer tx.Rollback(r.Context())
+		if err := h.ciProfileAggregate().RejectResourceRetargetInTx(r.Context(), tx, scope); err != nil {
+			writeCIProfileError(w, err)
+			return
+		}
+		updated, err = h.Queries.WithTx(tx).UpdateProjectResource(r.Context(), update)
+		if err == nil {
+			err = tx.Commit(r.Context())
+		}
+	} else {
+		updated, err = h.Queries.UpdateProjectResource(r.Context(), update)
+	}
 	if err != nil {
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "this resource is already attached to the project")
@@ -493,7 +519,7 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if _, ok := h.requireWorkspaceRole(w, r, uuidToString(project.WorkspaceID), "project not found", "owner", "admin"); !ok {
+	if _, ok := h.requireWorkspaceRole(w, r, uuidToString(project.WorkspaceID), "project not found", "owner", "admin", "member"); !ok {
 		return
 	}
 	resourceUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "resourceId"), "resource id")
@@ -515,26 +541,36 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "project resource not found")
 		return
 	}
-	// There are intentionally no FK cascades from project_resource. Tombstone
-	// an attached CI profile before deleting the resource so a failed or stale
-	// resource cannot remain discovery-eligible.
+	// There are intentionally no FK cascades from project_resource. The
+	// dependent profile tombstone and resource deletion share this transaction,
+	// so a failed delete cannot leave a partially-disabled profile behind.
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project resource")
+		return
+	}
+	defer tx.Rollback(r.Context())
 	if resource.ResourceType == "github_repo" {
 		actor, err := parseUUIDLoose(userID)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid actor")
 			return
 		}
-		scope, err := ciProfileScopeForDeletedResource(project, resource, actor)
+		scope, err := ciProfileScopeForResource(project, resource, actor)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "github repository resource is malformed")
 			return
 		}
-		if err := h.ciProfileAggregate().TombstoneResource(r.Context(), scope); err != nil {
+		if err := h.ciProfileAggregate().TombstoneResourceInTx(r.Context(), tx, scope); err != nil {
 			writeCIProfileError(w, err)
 			return
 		}
 	}
-	if err := h.Queries.DeleteProjectResource(r.Context(), resource.ID); err != nil {
+	if err := h.Queries.WithTx(tx).DeleteProjectResource(r.Context(), resource.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project resource")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project resource")
 		return
 	}

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -109,6 +111,139 @@ func TestCIRepositoryProfileRejectsUnknownTransportFields(t *testing.T) {
 	}
 }
 
+func TestCIRepositoryProfileRejectsDisablePayloadWithoutMutation(t *testing.T) {
+	project, resource := createCIProfileTestResource(t)
+	t.Cleanup(func() {
+		req := newRequest(http.MethodDelete, "/api/projects/"+project.ID, nil)
+		req = withURLParam(req, "id", project.ID)
+		testHandler.DeleteProject(httptest.NewRecorder(), req)
+	})
+	registered := callCIProfile(t, http.MethodPost, project.ID, resource.ID, "", ciProfileRegistration(project.ID, resource.ID))
+	if registered.Code != http.StatusCreated {
+		t.Fatalf("register: %d: %s", registered.Code, registered.Body.String())
+	}
+
+	req := rawCIProfileRequest(http.MethodPost, project.ID, resource.ID, "/disable", []byte(`{"provider":"github-hosted"}`))
+	w := httptest.NewRecorder()
+	testHandler.DisableCIRepositoryProfile(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("forbidden disable payload: got %d: %s", w.Code, w.Body.String())
+	}
+	var status string
+	var auditCount int
+	if err := testPool.QueryRow(context.Background(), `SELECT status FROM ci_repository_profile WHERE project_id=$1`, project.ID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM ci_repository_profile_audit WHERE project_id=$1`, project.ID).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending_adapter" || auditCount != 1 {
+		t.Fatalf("forbidden disable mutated profile: status=%q audits=%d", status, auditCount)
+	}
+}
+
+func TestCIRepositoryProfileRejectsRepositoryRetarget(t *testing.T) {
+	project, resource := createCIProfileTestResource(t)
+	t.Cleanup(func() {
+		req := newRequest(http.MethodDelete, "/api/projects/"+project.ID, nil)
+		req = withURLParam(req, "id", project.ID)
+		testHandler.DeleteProject(httptest.NewRecorder(), req)
+	})
+	if response := callCIProfile(t, http.MethodPost, project.ID, resource.ID, "", ciProfileRegistration(project.ID, resource.ID)); response.Code != http.StatusCreated {
+		t.Fatalf("register: %d: %s", response.Code, response.Body.String())
+	}
+	originalVerifier := testHandler.CIProfileVerifier
+	testHandler.CIProfileVerifier = ciProfileTestVerifier{}
+	t.Cleanup(func() { testHandler.CIProfileVerifier = originalVerifier })
+	if response := callCIProfile(t, http.MethodPost, project.ID, resource.ID, "/enable", map[string]any{"adapter_attestation": map[string]any{"opaque": "input"}}); response.Code != http.StatusOK {
+		t.Fatalf("enable: %d: %s", response.Code, response.Body.String())
+	}
+
+	updateReq := newRequest(http.MethodPut, "/api/projects/"+project.ID+"/resources/"+resource.ID, map[string]any{
+		"resource_ref": map[string]any{"url": "https://github.com/example/retargeted.git"},
+	})
+	updateReq = withURLParams(updateReq, "id", project.ID, "resourceId", resource.ID)
+	update := httptest.NewRecorder()
+	testHandler.UpdateProjectResource(update, updateReq)
+	if update.Code != http.StatusConflict {
+		t.Fatalf("retarget: got %d: %s", update.Code, update.Body.String())
+	}
+
+	discovery := callCIProfile(t, http.MethodGet, project.ID, resource.ID, "?revision=0123456789abcdef0123456789abcdef01234567", nil)
+	if discovery.Code != http.StatusOK {
+		t.Fatalf("discovery after retarget rejection: %d: %s", discovery.Code, discovery.Body.String())
+	}
+	var profile ciprofile.Profile
+	if err := json.NewDecoder(discovery.Body).Decode(&profile); err != nil {
+		t.Fatal(err)
+	}
+	if profile.Repository != "violinhost/multica" || profile.Status != "enabled" || !profile.Eligible {
+		t.Fatalf("retarget changed profile semantics: %+v", profile)
+	}
+}
+
+func TestCIRepositoryProfileResourceDeleteRollsBackTombstone(t *testing.T) {
+	project, resource := createCIProfileTestResource(t)
+	t.Cleanup(func() {
+		req := newRequest(http.MethodDelete, "/api/projects/"+project.ID, nil)
+		req = withURLParam(req, "id", project.ID)
+		testHandler.DeleteProject(httptest.NewRecorder(), req)
+	})
+	if response := callCIProfile(t, http.MethodPost, project.ID, resource.ID, "", ciProfileRegistration(project.ID, resource.ID)); response.Code != http.StatusCreated {
+		t.Fatalf("register: %d: %s", response.Code, response.Body.String())
+	}
+	originalVerifier := testHandler.CIProfileVerifier
+	testHandler.CIProfileVerifier = ciProfileTestVerifier{}
+	t.Cleanup(func() { testHandler.CIProfileVerifier = originalVerifier })
+	if response := callCIProfile(t, http.MethodPost, project.ID, resource.ID, "/enable", map[string]any{"adapter_attestation": map[string]any{"opaque": "input"}}); response.Code != http.StatusOK {
+		t.Fatalf("enable: %d: %s", response.Code, response.Body.String())
+	}
+
+	const functionName = "ci_profile_test_reject_resource_delete"
+	const triggerName = "ci_profile_test_reject_resource_delete_trigger"
+	if _, err := testPool.Exec(context.Background(), fmt.Sprintf(`
+		CREATE OR REPLACE FUNCTION %s() RETURNS trigger AS $$
+		BEGIN
+			IF OLD.id::text = TG_ARGV[0] THEN RAISE EXCEPTION 'forced resource delete failure'; END IF;
+			RETURN OLD;
+		END;
+		$$ LANGUAGE plpgsql`, functionName)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(context.Background(), fmt.Sprintf(`
+		CREATE TRIGGER %s BEFORE DELETE ON project_resource
+		FOR EACH ROW EXECUTE FUNCTION %s('%s')`, triggerName, functionName, resource.ID)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), "DROP TRIGGER IF EXISTS "+triggerName+" ON project_resource")
+		_, _ = testPool.Exec(context.Background(), "DROP FUNCTION IF EXISTS "+functionName+"()")
+	})
+
+	deleteReq := newRequest(http.MethodDelete, "/api/projects/"+project.ID+"/resources/"+resource.ID, nil)
+	deleteReq = withURLParams(deleteReq, "id", project.ID, "resourceId", resource.ID)
+	deleteResponse := httptest.NewRecorder()
+	testHandler.DeleteProjectResource(deleteResponse, deleteReq)
+	if deleteResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("forced delete failure: got %d: %s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+	var status string
+	var auditCount int
+	var resources int
+	if err := testPool.QueryRow(context.Background(), `SELECT status FROM ci_repository_profile WHERE project_id=$1`, project.ID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM ci_repository_profile_audit WHERE project_id=$1`, project.ID).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM project_resource WHERE id=$1`, resource.ID).Scan(&resources); err != nil {
+		t.Fatal(err)
+	}
+	if status != "enabled" || auditCount != 2 || resources != 1 {
+		t.Fatalf("delete failure left partial state: status=%q audits=%d resources=%d", status, auditCount, resources)
+	}
+}
+
 func createCIProfileTestResource(t *testing.T) (ProjectResponse, ProjectResourceResponse) {
 	t.Helper()
 	projectRecorder := httptest.NewRecorder()
@@ -166,6 +301,14 @@ func callCIProfile(t *testing.T, method, projectID, resourceID, suffix string, b
 		testHandler.RegisterCIRepositoryProfile(w, req)
 	}
 	return w
+}
+
+func rawCIProfileRequest(method, projectID, resourceID, suffix string, body []byte) *http.Request {
+	req := httptest.NewRequest(method, "/api/projects/"+projectID+"/resources/"+resourceID+"/ci-profile"+suffix, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", testUserID)
+	req.Header.Set("X-Workspace-ID", testWorkspaceID)
+	return withURLParams(req, "id", projectID, "resourceId", resourceID)
 }
 
 func jsonContains(body []byte, key string) bool {

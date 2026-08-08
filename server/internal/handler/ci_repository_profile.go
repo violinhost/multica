@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -11,10 +10,6 @@ import (
 	"github.com/multica-ai/multica/server/internal/ciprofile"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
-
-type enableCIRepositoryProfileRequest struct {
-	AdapterAttestation json.RawMessage `json:"adapter_attestation"`
-}
 
 // loadCIRepositoryProfileResource is the HTTP ownership boundary. The
 // aggregate receives only server-derived repository identity and UUID scope.
@@ -79,7 +74,7 @@ func writeCIProfileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "ci repository profile not found")
 	case errors.Is(err, ciprofile.ErrStoreUnavailable), errors.Is(err, ciprofile.ErrVerifierUnavailable):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
-	case errors.Is(err, ciprofile.ErrIdempotencyConflict), errors.Is(err, ciprofile.ErrInvalidAttestation):
+	case errors.Is(err, ciprofile.ErrIdempotencyConflict), errors.Is(err, ciprofile.ErrInvalidAttestation), errors.Is(err, ciprofile.ErrRepositoryMismatch):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "ci repository-profile operation failed")
@@ -133,18 +128,12 @@ func (h *Handler) EnableCIRepositoryProfile(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	var req enableCIRepositoryProfileRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil || len(req.AdapterAttestation) == 0 || !json.Valid(req.AdapterAttestation) {
-		writeError(w, http.StatusBadRequest, "adapter_attestation is required")
+	attestation, err := ciprofile.DecodeEnableAttestation(readBoundedJSON(r, 64<<10))
+	if err != nil {
+		writeCIProfileError(w, err)
 		return
 	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "request must contain one JSON object")
-		return
-	}
-	profile, err := h.ciProfileAggregate().Enable(r.Context(), scope, req.AdapterAttestation)
+	profile, err := h.ciProfileAggregate().Enable(r.Context(), scope, attestation)
 	if err != nil {
 		writeCIProfileError(w, err)
 		return
@@ -155,6 +144,10 @@ func (h *Handler) EnableCIRepositoryProfile(w http.ResponseWriter, r *http.Reque
 func (h *Handler) DisableCIRepositoryProfile(w http.ResponseWriter, r *http.Request) {
 	_, _, scope, ok := h.loadCIRepositoryProfileResource(w, r, true)
 	if !ok {
+		return
+	}
+	if err := ciprofile.DecodeDisableRequest(readBoundedJSON(r, 64<<10)); err != nil {
+		writeCIProfileError(w, err)
 		return
 	}
 	profile, err := h.ciProfileAggregate().Disable(r.Context(), scope)
@@ -173,9 +166,9 @@ func readBoundedJSON(r *http.Request, limit int64) []byte {
 	return body
 }
 
-// ciProfileScopeForDeletedResource is deliberately separate from the endpoint
-// loader: project-resource deletion already has a resolved resource row.
-func ciProfileScopeForDeletedResource(project db.Project, resource db.ProjectResource, actor pgtype.UUID) (ciprofile.Scope, error) {
+// ciProfileScopeForResource is deliberately separate from the endpoint loader:
+// resource update and deletion already have a resolved resource row.
+func ciProfileScopeForResource(project db.Project, resource db.ProjectResource, actor pgtype.UUID) (ciprofile.Scope, error) {
 	var ref struct {
 		URL string `json:"url"`
 	}
