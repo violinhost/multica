@@ -1144,6 +1144,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
+			r.Route("/api/managed-actions", func(r chi.Router) {
+				r.Get("/projects/{projectId}", h.ListManagedActionCapabilities)
+				r.Post("/start", h.StartManagedAction)
+			})
+
 			// Squads
 			r.Route("/api/squads", func(r chi.Router) {
 				r.Get("/", h.ListSquads)
