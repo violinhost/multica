@@ -7,6 +7,35 @@ import (
 	"testing"
 )
 
+func TestReceiptJSONIncludesEveryScopeIdentity(t *testing.T) {
+	receipt := Receipt{
+		DispatchID:    "dispatch",
+		WorkspaceID:   "workspace",
+		ProjectID:     "project",
+		ParentIssueID: "parent",
+		ActionKey:     ActionKey,
+		Generation:    1,
+		State:         "analysis_queued",
+		ChildIssueID:  "child",
+		TaskID:        "task",
+	}
+	encoded, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatalf("marshal receipt: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("decode receipt: %v", err)
+	}
+	for key, want := range map[string]string{
+		"dispatch_id": "dispatch", "workspace_id": "workspace", "project_id": "project", "parent_issue_id": "parent",
+	} {
+		if got[key] != want {
+			t.Errorf("receipt %s = %#v, want %q; JSON tags must not collide", key, got[key], want)
+		}
+	}
+}
+
 func TestRegistryIsFixedAndVersioned(t *testing.T) {
 	spec, ok := FindSpec(ActionKey, ActionVersion)
 	if !ok || spec.Workflow != WorkflowW1 {

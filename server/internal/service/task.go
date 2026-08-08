@@ -38,6 +38,9 @@ type TaskService struct {
 	Analytics analytics.Client
 	Metrics   *obsmetrics.BusinessMetrics
 	Wakeup    TaskWakeupNotifier
+	// TerminalObserver records domain-specific terminal state after the native
+	// task transition commits. It must never make task completion fail.
+	TerminalObserver TaskTerminalObserver
 	// FeatureFlags is the server-side toggle router. Nil is valid and returns
 	// each call site's default.
 	FeatureFlags *featureflag.Service
@@ -59,6 +62,12 @@ type TaskService struct {
 	analyticsContextMu    sync.Mutex
 	analyticsContextCache map[string]analytics.TaskContext
 	analyticsContextOrder []string
+}
+
+// TaskTerminalObserver lets an owning aggregate durably observe a task's
+// terminal state without coupling TaskService to a specific workflow package.
+type TaskTerminalObserver interface {
+	ObserveTaskTerminal(ctx context.Context, task db.AgentTaskQueue) error
 }
 
 // ComposioOverlayBuilder is the seam TaskService uses to build the per-task
@@ -241,6 +250,15 @@ func NewTaskService(q *db.Queries, tx TxStarter, hub *realtime.Hub, bus *events.
 		wakeup = wakeups[0]
 	}
 	return &TaskService{Queries: q, TxStarter: tx, Hub: hub, Bus: bus, Wakeup: wakeup}
+}
+
+func (s *TaskService) observeTaskTerminal(ctx context.Context, task db.AgentTaskQueue) {
+	if s.TerminalObserver == nil {
+		return
+	}
+	if err := s.TerminalObserver.ObserveTaskTerminal(ctx, task); err != nil {
+		slog.Warn("task terminal observer failed", "task_id", util.UUIDToString(task.ID), "status", task.Status, "error", err)
+	}
 }
 
 var trivialDoneMarkers = []string{
@@ -1612,6 +1630,7 @@ func (s *TaskService) CancelTasksForIssue(ctx context.Context, issueID pgtype.UU
 	}
 	for _, t := range cancelled {
 		s.captureTaskCancelled(ctx, t)
+		s.observeTaskTerminal(ctx, t)
 		s.ReconcileAgentStatus(ctx, t.AgentID)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
@@ -1632,6 +1651,7 @@ func (s *TaskService) CancelTasksForAgent(ctx context.Context, agentID pgtype.UU
 	}
 	for _, t := range cancelled {
 		s.captureTaskCancelled(ctx, t)
+		s.observeTaskTerminal(ctx, t)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
 	// Reconcile once after the loop — agent transitions from
@@ -1653,6 +1673,7 @@ func (s *TaskService) CancelTasksByTriggerComment(ctx context.Context, commentID
 	}
 	for _, t := range cancelled {
 		s.captureTaskCancelled(ctx, t)
+		s.observeTaskTerminal(ctx, t)
 		s.ReconcileAgentStatus(ctx, t.AgentID)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
@@ -1667,6 +1688,7 @@ func (s *TaskService) CancelTasksByTriggerComment(ctx context.Context, commentID
 func (s *TaskService) BroadcastCancelledTasks(ctx context.Context, cancelled []db.AgentTaskQueue) {
 	for _, t := range cancelled {
 		s.captureTaskCancelled(ctx, t)
+		s.observeTaskTerminal(ctx, t)
 		s.ReconcileAgentStatus(ctx, t.AgentID)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
@@ -1739,6 +1761,7 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 
 	slog.Info("task cancelled", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCancelled(ctx, task)
+	s.observeTaskTerminal(ctx, task)
 	cancelledChatMessage := s.finalizeCancelledChatMessage(ctx, task, opts)
 
 	// Reconcile agent status
@@ -2737,6 +2760,7 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 
 	// Broadcast
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCompleted, task)
+	s.observeTaskTerminal(ctx, task)
 
 	return &task, nil
 }
@@ -3043,6 +3067,7 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 
 	// Broadcast
 	s.broadcastTaskEvent(ctx, protocol.EventTaskFailed, task)
+	s.observeTaskTerminal(ctx, task)
 
 	return &task, nil
 }
@@ -3456,6 +3481,7 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 			failureReason = t.FailureReason.String
 		}
 		s.captureTaskFailed(ctx, t)
+		s.observeTaskTerminal(ctx, t)
 
 		workspaceID := ""
 		if t.IssueID.Valid {

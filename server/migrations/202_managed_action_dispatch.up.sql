@@ -30,7 +30,7 @@ CREATE TABLE managed_action_dispatch (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (generation > 0),
-    CHECK (state IN ('analysis_queued', 'analysis_running', 'analysis_terminal', 'succeeded', 'failed'))
+    CHECK (state IN ('analysis_queued', 'analysis_running', 'analysis_terminal_completed', 'analysis_terminal_failed', 'analysis_terminal_cancelled', 'analysis_terminal_unknown', 'succeeded', 'failed'))
 );
 
 CREATE TABLE managed_action_outbox (
@@ -43,8 +43,19 @@ CREATE TABLE managed_action_outbox (
     delivered_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (status IN ('pending', 'delivered'))
+    CHECK (status IN ('pending', 'delivering', 'delivered'))
 );
 
-CREATE UNIQUE INDEX CONCURRENTLY uq_managed_action_dispatch_scope
-    ON managed_action_dispatch (workspace_id, project_id, parent_issue_id, action_key, idempotency_key, generation);
+CREATE TABLE managed_action_lane_observation (
+    dispatch_id UUID NOT NULL,
+    task_id UUID NOT NULL,
+    lane_role TEXT NOT NULL,
+    stage INTEGER NOT NULL,
+    task_status TEXT NOT NULL,
+    failure_reason TEXT,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (dispatch_id, task_id),
+    CHECK (lane_role = 'analysis'),
+    CHECK (stage = 1),
+    CHECK (task_status IN ('completed', 'failed', 'cancelled'))
+);

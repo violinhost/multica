@@ -239,6 +239,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			h.DaemonWorkspaceRefresh = notifier
 		}
 	}
+	// Pending managed-action wakeups are durable. Recover them when the server
+	// constructs its native services, rather than relying on the request that
+	// created the dispatch to stay alive after commit.
+	h.ManagedActionService.Reconcile(context.Background())
 	if rdb != nil {
 		h.UpdateStore = handler.NewRedisUpdateStore(rdb)
 		h.ModelListStore = handler.NewRedisModelListStore(rdb)

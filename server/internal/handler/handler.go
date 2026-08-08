@@ -265,6 +265,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 
 	taskSvc := service.NewTaskService(queries, txStarter, hub, bus, daemonHub)
 	taskSvc.Analytics = analyticsClient
+	managedActions := managedaction.NewService(queries, executor, txStarter, nil, taskSvc)
+	taskSvc.TerminalObserver = managedActions
 	h := &Handler{
 		Queries:                      queries,
 		DB:                           executor,
@@ -277,7 +279,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		TaskService:                  taskSvc,
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
 		AutopilotService:             service.NewAutopilotService(queries, txStarter, bus, taskSvc),
-		ManagedActionService:         managedaction.NewService(queries, executor, txStarter, nil, taskSvc),
+		ManagedActionService:         managedActions,
 		EmailService:                 emailService,
 		UpdateStore:                  NewInMemoryUpdateStore(),
 		ModelListStore:               NewInMemoryModelListStore(),

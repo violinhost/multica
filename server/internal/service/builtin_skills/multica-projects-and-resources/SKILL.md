@@ -20,6 +20,21 @@ multica project resource list <project-id> --output json
 Project resources are mutated through project resource commands/endpoints. Issue
 comments do not create durable project resources.
 
+## Managed-action bindings
+
+The fixed native managed-action tracer accepts exact project resource IDs, not
+free-form repository URLs. Discover project resources first, then pass the
+selected IDs in the versioned request together with immutable revision facts:
+
+```bash
+multica managed-action discover <project-id> --output json
+multica managed-action start --request-file ./managed-action-request.json --output json
+```
+
+Discovery is project-scoped. An action that is absent or disabled is not
+authorized, and a resource ID that is not a member of the requested project is
+rejected before any child issue or native task is created.
+
 ## Core model
 
 A project groups work and carries durable resources. A resource is not just display metadata; it is context later injected into task briefs and `.multica/project/resources.json`.
