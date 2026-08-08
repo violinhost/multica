@@ -20,6 +20,13 @@ multica project resource list <project-id> --output json
 Project resources are mutated through project resource commands/endpoints. Issue
 comments do not create durable project resources.
 
+For a `github_repo` resource, workspace owners and admins may register the
+fixed native `ci.repository-profile.v1` contract through the project-resource
+API. Registration begins at `pending_adapter`; it is not CI dispatch authority.
+Enable requires a separately supplied verifier attestation and fails closed
+when no verifier is configured. Discovery is scoped to one project resource and
+one full immutable revision; it returns only the sanitized eligibility reason.
+
 ## Core model
 
 A project groups work and carries durable resources. A resource is not just display metadata; it is context later injected into task briefs and `.multica/project/resources.json`.
