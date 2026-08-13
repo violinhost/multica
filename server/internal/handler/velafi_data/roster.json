@@ -997,6 +997,286 @@
       ],
       "is_activated": null,
       "job_title": null
+    },
+    {
+      "name": "Joey He",
+      "en_name": "",
+      "email": "joey.he@galactic.holdings",
+      "open_id": "ou_d990ce2d64806e8ab719e57900579e37",
+      "union_id": "on_e70ab26cc2e395f1a1032dfba567233d",
+      "user_id": "0194",
+      "mobile": "",
+      "department_ids": [
+        "od-acb3b6a8ec757d8b611998135456f342"
+      ],
+      "is_activated": true,
+      "job_title": "Data Analytics Manager"
+    },
+    {
+      "name": "John Besio",
+      "en_name": "",
+      "email": "john.besio@galactic.holdings",
+      "open_id": "ou_9626c4fb9f1d0e7ee66b760db5eec382",
+      "union_id": "on_29dcf82825d90cc547266224edafe9fb",
+      "user_id": "0196",
+      "mobile": "",
+      "department_ids": [
+        "od-367e3bbc96e95f559a735fcc47162aa4"
+      ],
+      "is_activated": true,
+      "job_title": "People & Talent Manager"
+    },
+    {
+      "name": "Mariana Ruiz Moreno",
+      "en_name": "",
+      "email": "mariana.ruizmoreno@galactic.holdings",
+      "open_id": "ou_c5b3f6161f69137c44a3367d376be468",
+      "union_id": "on_a2fb99bb40adc70d90029f58d812acec",
+      "user_id": "0110",
+      "mobile": "+5491156158292",
+      "department_ids": [
+        "od-367e3bbc96e95f559a735fcc47162aa4"
+      ],
+      "is_activated": true,
+      "job_title": "Senior HR Business Partner"
+    },
+    {
+      "name": "Graham Zhou - L & C",
+      "en_name": "",
+      "email": "graham.zhou@galactic.holdings",
+      "open_id": "ou_cb0e826b1f0de56c168a3b97254a7a47",
+      "union_id": "on_8deb305fa2f7c919b9012376d72897e1",
+      "user_id": "0200",
+      "mobile": "",
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": true,
+      "job_title": "Compliance Officer"
+    },
+    {
+      "name": "Joanne Jiao",
+      "en_name": "",
+      "email": "joanne.jiao@galactic.holdings",
+      "open_id": "ou_f542fdc429c7da008f381d748bf230ef",
+      "union_id": "on_b2cff0f34d4fe141b75dde828f2122cf",
+      "user_id": "0197",
+      "mobile": "",
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": true,
+      "job_title": "Compliance Officer"
+    },
+    {
+      "name": "Pedro Pompeu Mendes Ferreira",
+      "en_name": "",
+      "email": "pedro.ferreira@galactic.holdings",
+      "open_id": "ou_41f20354280dce54acb2f8fea0fb3568",
+      "union_id": "on_1280305cb789e09dcba861d9ec6d3ef5",
+      "user_id": "0199",
+      "mobile": "",
+      "department_ids": [
+        "od-df8b30c9e59ac49d6e016514bf088fc8"
+      ],
+      "is_activated": true,
+      "job_title": "Compliance Officer"
+    },
+    {
+      "name": "Rodrigo Moreira Corrêa",
+      "en_name": "",
+      "email": "rodrigo.moreira@galactic.holdings",
+      "open_id": "ou_37c3b1ded2251099cf6447235c79c3de",
+      "union_id": "on_85dc03e7b16b22c7204eba53113b1cbe",
+      "user_id": "0212",
+      "mobile": "+5531987513572",
+      "department_ids": [
+        "od-2ceb613d8772bba783dbd4461a462c7f"
+      ],
+      "is_activated": true,
+      "job_title": "Country Manager"
+    },
+    {
+      "name": "Rudy Li - P&E",
+      "en_name": "",
+      "email": "rudy.li@galactic.holdings",
+      "open_id": "ou_034740792946e8085bc2645030b10055",
+      "union_id": "on_c375ae33d1a7b22786dfde6cc4a43742",
+      "user_id": "0201",
+      "mobile": "",
+      "department_ids": [
+        "od-e0787c41d679112c26ee4182fa681649"
+      ],
+      "is_activated": true,
+      "job_title": "Data Engineer"
+    },
+    {
+      "name": "Liang Cui - P&E",
+      "en_name": "",
+      "email": "liang.cui@galactic.holdings",
+      "open_id": "ou_ea1c65e647aa420692fc99c51220fa12",
+      "union_id": "on_974604b2694962c836e78fa374def825",
+      "user_id": "0202",
+      "mobile": "",
+      "department_ids": [
+        "od-32fcbb981c04a0feb0fed44b2ba31013"
+      ],
+      "is_activated": true,
+      "job_title": "Senior QA Engineer"
+    },
+    {
+      "name": "André Spolaor",
+      "en_name": "André Spolaor - Customer Success",
+      "email": "andre.spolaor@galactic.holdings",
+      "open_id": "ou_46d457cccffabddf7b65d474849d98f3",
+      "union_id": "on_983ba04a4d1015ea563863ac25a6a53c",
+      "user_id": "0204",
+      "mobile": "+5531987289297",
+      "department_ids": [
+        "od-882f8d4c01a5e77bb956e42e67b8e36b"
+      ],
+      "is_activated": true,
+      "job_title": "Customer Success Manager"
+    },
+    {
+      "name": "Danny Pan - Sales",
+      "en_name": "",
+      "email": "danny.pan@galactic.holdings",
+      "open_id": "ou_2b68ed6617bf9e0b7bbfe8ef1c8831db",
+      "union_id": "on_25454a246f452a293973d20163fcb504",
+      "user_id": "0203",
+      "mobile": "",
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": true,
+      "job_title": "AE Manager"
+    },
+    {
+      "name": "Jeffrey Hu",
+      "en_name": "",
+      "email": "jeffrey.hu@galactic.holdings",
+      "open_id": "ou_725ee10e23acf8a80f60b9e1eabcd116",
+      "union_id": "on_e9531cdb99a760bc77dd77e98d73f981",
+      "user_id": "0195",
+      "mobile": "",
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Tianyang Ni - Sales",
+      "en_name": "",
+      "email": "tianyang.ni@galactic.holdings",
+      "open_id": "ou_fcd81d4ba9764c6ee561bfa5d00d29c6",
+      "union_id": "on_27b6995abf44eb221ff5720d5656fe90",
+      "user_id": "0198",
+      "mobile": "",
+      "department_ids": [
+        "od-c248d3ff2ff1d9b641652542e8d1ef56"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Daniel Santin",
+      "en_name": "",
+      "email": "daniel.santin@galactic.holdings",
+      "open_id": "ou_9e1438605cb6e9bbc35af0b3361cc0c3",
+      "union_id": "on_cca5aca791cf6444c91c64916d2f9e3a",
+      "user_id": "0206",
+      "mobile": "+525533976264",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "David Alvarez Tostado Ortiz",
+      "en_name": "",
+      "email": "david.ortiz@galactic.holdings",
+      "open_id": "ou_0c634510282cddcb35dca1d285861f79",
+      "union_id": "on_4c6eac65857597c962affa7c25b074f6",
+      "user_id": "0207",
+      "mobile": "+524491388513",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Jaime Sotomayor",
+      "en_name": "",
+      "email": "jaime.sotomayor@galactic.holdings",
+      "open_id": "ou_4c1332e7de38eba75fd60b4862f897b4",
+      "union_id": "on_7257ea52ba64ce0c5925c5fb4303b2b4",
+      "user_id": "0208",
+      "mobile": "+525527174556",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Jennifer Palomino",
+      "en_name": "",
+      "email": "jennifer.palomino@galactic.holdings",
+      "open_id": "ou_a1cacb8f892104495d631ba76a5bf2ff",
+      "union_id": "on_deff290ecdee5adcaa58886c94b24201",
+      "user_id": "0209",
+      "mobile": "+5527992497116",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Jonathan Asti Castillo",
+      "en_name": "",
+      "email": "jonathan.asti@galactic.holdings",
+      "open_id": "ou_ba93c3ec424c05fc5788957389e98189",
+      "union_id": "on_7c29f00f743fbffd4ec3a8f3508c507d",
+      "user_id": "0210",
+      "mobile": "+51977724713",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Juan Felipe Gómez Patiño",
+      "en_name": "",
+      "email": "juan.felipe@galactic.holdings",
+      "open_id": "ou_d65f22369751d535e08778869f42a3f8",
+      "union_id": "on_e834381e4db8190d5c85745d4a8cda37",
+      "user_id": "0205",
+      "mobile": "+573174038044",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
+    },
+    {
+      "name": "Ximena Benitez",
+      "en_name": "Ximena Benitez",
+      "email": "ximena.benitez@galactic.holdings",
+      "open_id": "ou_2f352556168b3d12dbc0ac2767b27cc5",
+      "union_id": "on_c85dcd024e3af51d7d40806950aa193b",
+      "user_id": "0211",
+      "mobile": "+59891625333",
+      "department_ids": [
+        "od-5b0bb047740dc0e73826e720cdb96414"
+      ],
+      "is_activated": true,
+      "job_title": "Account Executive"
     }
   ]
 }
