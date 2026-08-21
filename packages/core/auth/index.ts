@@ -1,4 +1,4 @@
-export { createAuthStore, type AuthStoreOptions, type AuthState } from "./store";
+export { createAuthStore, type AuthStoreOptions, type AuthState, type AuthStatus } from "./store";
 export { sanitizeNextUrl } from "./utils";
 export {
   LOGOUT_IN_PROGRESS_KEY,

@@ -93,7 +93,9 @@ export interface MemberWithUser {
   name: string;
   email: string;
   avatar_url: string | null;
-  is_pending_login: boolean;
+  // velafi-org-invite-pack: quick-added users exist before first login.
+  // Optional so upstream fixtures/callers that predate the field still typecheck.
+  is_pending_login?: boolean;
 }
 
 export interface Invitation {

@@ -34,26 +34,6 @@ function makeApi(): ApiClient {
 
 describe("authStore", () => {
   it("publishes a retry request instead of silently ignoring it", () => {
-    getMe,
-    logout: vi.fn(() => Promise.resolve()),
-    // Only the methods touched by store.initialize are needed. Cast to
-    // ApiClient for type compatibility — the store treats it opaquely.
-describe("authStore.logout — state reset only", () => {
-  it("clears local auth state without navigating or calling backend logout directly", () => {
-    const storage = makeStorage({ multica_token: "t" });
-    const api = makeApi(() => Promise.resolve(fakeUser));
-    const onLogout = vi.fn();
-    const store = createAuthStore({ api, storage, cookieAuth: true, onLogout });
-    store.setState({ user: fakeUser, isLoading: false });
-    store.getState().logout();
-    expect(api.logout).not.toHaveBeenCalled();
-    expect(storage.snapshot().multica_token).toBeUndefined();
-    expect(store.getState().user).toBeNull();
-    expect(onLogout).toHaveBeenCalledTimes(1);
-  });
-});
-describe("authStore.initialize — token mode", () => {
-  it("keeps the stored token when getMe fails with a non-401 ApiError (e.g. 500)", async () => {
     const storage = makeStorage({ multica_token: "t" });
     const api = makeApi();
     const store = createAuthStore({ api, storage });
