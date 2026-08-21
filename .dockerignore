@@ -39,6 +39,10 @@ coverage
 # app workspaces so they do not silently enter the build context.
 /apps/*
 !/apps/web/
+# Velafi fork (frozen-DIY 2026-08-20): Dockerfile.docs is fork-only — upstream
+# does not build a docs image, so its default-exclude of future app workspaces
+# (added in v0.4.31) silently emptied our docs build context.
+!/apps/docs/
 
 # Repository-only tooling
 /.github/
