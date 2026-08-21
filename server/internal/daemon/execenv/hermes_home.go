@@ -40,10 +40,18 @@ import (
 //     the user's global/builtin skills read-only without copying them;
 //   - populates the task-local `skills/` dir with ONLY the Multica-bound skills,
 //     which take precedence because Hermes lists the home skills dir first;
-//   - keeps `memories/` overlay-owned (a fresh per-task dir), NOT symlinked to
-//     the shared home: Hermes loads and writes back MEMORY.md/USER.md there, and
-//     per-agent memory is a Multica product concern — the host's local Hermes
-//     memory must not bleed into a task, nor task memory back out to the host;
+//   - keeps `memories/` overlay-owned, NOT symlinked to the shared home: Hermes
+//     loads and writes back MEMORY.md/USER.md there, and per-agent memory is a
+//     Multica product concern — the host's local Hermes memory must not bleed
+//     into a task, nor task memory back out to the host. The overlay links it to
+//     the agent's persistent store so it survives across tasks and issues
+//     (hermes_memory.go); it is a fresh per-task dir only when no store applies;
+//   - keeps the state.db SQLite session store and its journal sidecars
+//     overlay-owned: the host's conversation history is never linked or copied.
+//     state.db is then linked to the conversation's own persistent store
+//     (hermes_sessions.go) so a multi-turn conversation survives the task; it
+//     stays a task-local file only when there is no store to key on, or on a
+//     host that cannot create the link;
 //   - disables the external `memory.provider` in the derived config so a
 //     host-configured Supermemory/Hindsight/etc. backend isn't shared across
 //     tasks. This is the on-disk + external-backend memory isolation; a managed,
@@ -54,13 +62,17 @@ import (
 // runtime (e.g. refreshing token state under a mirrored auth/OAuth path) that
 // write does reach the shared home — that propagation is intentional.
 
-// hermesOverriddenEntries are the top-level entries of the shared ~/.hermes/
-// that the overlay supplies its own task-local version of, so they are NOT
-// mirrored from the shared home and are preserved across reuse reconciliation:
+// hermesOverriddenEntries are the fixed top-level entries of the shared
+// ~/.hermes/ that the overlay supplies its own task-local version of, so they
+// are NOT mirrored from the shared home and are preserved across reuse
+// reconciliation:
 //   - skills/       task-local, only the bound skills
 //   - config.yaml   derived config with absolutized external_dirs
-//   - memories/     fresh per-task dir, isolated from the host's memory
+//   - memories/     link to the agent's persistent store, isolated from the host
+//   - marker below  records that legacy shared SQLite state was detached
 //
+// The state.db SQLite family is classified dynamically by
+// isHermesOverlayOwnedEntry so every journal sidecar stays task-local too.
 // Everything else in the shared home is mirrored generically.
 //
 // active_profile and profiles are also overlay-owned (never mirrored): Hermes
@@ -80,13 +92,32 @@ import (
 // HERMES_HOME to the overlay, and is written even when the source has none so
 // Hermes' project-.env fallback (loaded with override=True only when no user
 // .env loaded) can't relocate the home either.
+const hermesTaskLocalStateMarker = ".multica-task-local-state-v1"
+
 var hermesOverriddenEntries = map[string]struct{}{
-	"skills":         {},
-	"config.yaml":    {},
-	"memories":       {},
-	"active_profile": {},
-	"profiles":       {},
-	".env":           {},
+	"skills":                   {},
+	"config.yaml":              {},
+	"memories":                 {},
+	"active_profile":           {},
+	"profiles":                 {},
+	".env":                     {},
+	hermesTaskLocalStateMarker: {},
+}
+
+// isHermesOverlayOwnedEntry reports whether name belongs to the per-task
+// overlay rather than the shared Hermes home. Hermes' state.db is the canonical
+// session store and uses WAL mode; mirroring its main file and journal sidecars
+// separately can produce an inconsistent snapshot, exposes host conversation
+// history, and fails on Windows when SQLite byte-range-locks state.db-shm.
+func isHermesOverlayOwnedEntry(name string) bool {
+	if _, owned := hermesOverriddenEntries[name]; owned {
+		return true
+	}
+	return isHermesTaskLocalStateEntry(name)
+}
+
+func isHermesTaskLocalStateEntry(name string) bool {
+	return name == "state.db" || strings.HasPrefix(name, "state.db-")
 }
 
 // platformDefaultHermesHome returns Hermes' platform-native default home:
@@ -340,42 +371,71 @@ func hermesProfileDir(root, name string) (home string, mustExist bool, err error
 // source home is absent — set for an explicitly named profile so a typo doesn't
 // silently seed from an empty dir and drop the user's auth/config. env is the
 // sanitized effective env used to expand ${VAR} in external_dirs so it matches
-// what the Hermes child sees.
-func prepareHermesHome(hermesHome, sourceHome string, sourceMustExist bool, workspaceSkills []SkillContextForEnv, env map[string]string, logger *slog.Logger) error {
+// what the Hermes child sees. memoryStore is the agent's persistent memory store
+// (execenv.HermesMemoryStorePath) that memories/ is linked to; empty keeps
+// memories/ task-local for this task. sessionStore is the conversation's
+// persistent session store (execenv.HermesSessionStorePath) that state.db is
+// linked to; empty — or a host that cannot create the link — keeps the session
+// database task-local. The returned hermesSessionMount reports both what got
+// mounted and whether the store actually holds a transcript, so the caller never
+// tells a task it can resume history that is not there.
+func prepareHermesHome(hermesHome, sourceHome string, sourceMustExist bool, workspaceSkills []SkillContextForEnv, env map[string]string, memoryStore, sessionStore string, logger *slog.Logger) (sessions hermesSessionMount, err error) {
 	sharedHome := strings.TrimSpace(sourceHome)
 	if sharedHome == "" {
 		sharedHome = platformDefaultHermesHome()
 	}
 	if sourceMustExist {
 		if fi, err := os.Stat(sharedHome); err != nil || !fi.IsDir() {
-			return fmt.Errorf("hermes profile home %q not found (create it with `hermes profile create`)", sharedHome)
+			return hermesSessionMount{}, fmt.Errorf("hermes profile home %q not found (create it with `hermes profile create`)", sharedHome)
 		}
 	}
 
 	if err := os.MkdirAll(hermesHome, 0o700); err != nil {
-		return fmt.Errorf("create hermes-home dir: %w", err)
+		return hermesSessionMount{}, fmt.Errorf("create hermes-home dir: %w", err)
 	}
 	// Tighten perms on reuse too — MkdirAll leaves an existing dir's mode alone,
 	// and the derived config below can hold inline api_key secrets.
 	if err := os.Chmod(hermesHome, 0o700); err != nil {
-		return fmt.Errorf("chmod hermes-home dir: %w", err)
+		return hermesSessionMount{}, fmt.Errorf("chmod hermes-home dir: %w", err)
 	}
-	// Fresh, isolated per-task memories dir (idempotent — preserved across reuse
-	// so the task/issue lifecycle keeps its own memory).
-	if err := os.MkdirAll(filepath.Join(hermesHome, "memories"), 0o700); err != nil {
-		return fmt.Errorf("create task memories dir: %w", err)
+	if err := prepareHermesTaskLocalState(hermesHome); err != nil {
+		return hermesSessionMount{}, fmt.Errorf("prepare task-local state: %w", err)
+	}
+	// Sessions: link state.db at the conversation's persistent store so the
+	// transcript survives the task. A store that cannot be mounted leaves the
+	// database task-local — the pre-existing behaviour — rather than failing the
+	// task. See hermes_sessions.go.
+	if sessionStore != "" {
+		mounted, err := mountHermesSessionDB(hermesHome, sessionStore, logger)
+		if err != nil {
+			return hermesSessionMount{}, fmt.Errorf("mount conversation sessions: %w", err)
+		}
+		sessions = mounted
+	}
+	// Memory: link memories/ at the agent's persistent store so it survives the
+	// task, or fall back to a fresh task-local dir when there is no store (no
+	// agent to key on, or an unresolvable profile dir). See hermes_memory.go.
+	if memoryStore != "" {
+		if err := mountHermesMemories(hermesHome, memoryStore, logger); err != nil {
+			return hermesSessionMount{}, fmt.Errorf("mount agent memories: %w", err)
+		}
+	} else if err := detachHermesMemories(hermesHome); err != nil {
+		return hermesSessionMount{}, fmt.Errorf("create task memories dir: %w", err)
 	}
 
 	if err := mirrorSharedHermesHome(sharedHome, hermesHome, logger); err != nil {
-		return fmt.Errorf("mirror shared hermes home: %w", err)
+		return hermesSessionMount{}, fmt.Errorf("mirror shared hermes home: %w", err)
 	}
 	if err := writeDerivedHermesConfig(sharedHome, hermesHome, env, logger); err != nil {
-		return fmt.Errorf("derive hermes config: %w", err)
+		return hermesSessionMount{}, fmt.Errorf("derive hermes config: %w", err)
 	}
 	if err := writeDerivedHermesEnv(sharedHome, hermesHome); err != nil {
-		return fmt.Errorf("derive hermes .env: %w", err)
+		return hermesSessionMount{}, fmt.Errorf("derive hermes .env: %w", err)
 	}
-	return writeHermesBoundSkills(hermesHome, workspaceSkills, logger)
+	if err := writeHermesBoundSkills(hermesHome, workspaceSkills, logger); err != nil {
+		return hermesSessionMount{}, err
+	}
+	return sessions, nil
 }
 
 // writeDerivedHermesEnv writes the task-local .env: the source home's .env
@@ -469,7 +529,7 @@ func mirrorSharedHermesHome(sharedHome, hermesHome string, logger *slog.Logger) 
 	mirrored := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
-		if _, overridden := hermesOverriddenEntries[name]; overridden {
+		if isHermesOverlayOwnedEntry(name) {
 			continue
 		}
 		src := filepath.Join(sharedHome, name)
@@ -492,7 +552,7 @@ func reconcileMirroredEntries(hermesHome string, mirrored map[string]struct{}) e
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if _, owned := hermesOverriddenEntries[name]; owned {
+		if isHermesOverlayOwnedEntry(name) {
 			continue
 		}
 		if _, keep := mirrored[name]; keep {
@@ -503,6 +563,39 @@ func reconcileMirroredEntries(hermesHome string, mirrored map[string]struct{}) e
 		}
 	}
 	return nil
+}
+
+// prepareHermesTaskLocalState migrates an overlay built by an older daemon away
+// from the shared Hermes SQLite session store. Without the marker, state.db and
+// its sidecars may be symlinks or independently copied files; neither is safe to
+// reuse as task-local state. Remove only those entries inside the generated
+// overlay, then record the migration atomically. Hermes lazily creates a fresh
+// database, and later prepares preserve it because the marker is present.
+func prepareHermesTaskLocalState(hermesHome string) error {
+	marker := filepath.Join(hermesHome, hermesTaskLocalStateMarker)
+	if fi, err := os.Lstat(marker); err == nil {
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("state marker is not a regular file: %s", marker)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat state marker: %w", err)
+	}
+
+	entries, err := os.ReadDir(hermesHome)
+	if err != nil {
+		return fmt.Errorf("read overlay home: %w", err)
+	}
+	for _, entry := range entries {
+		if !isHermesTaskLocalStateEntry(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(hermesHome, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove legacy task state %s: %w", path, err)
+		}
+	}
+	return writeFileAtomic(marker, []byte("task-local Hermes state\n"), 0o600)
 }
 
 // linkSharedHermesEntry symlinks dst → src, idempotent across Reuse: an existing
@@ -553,6 +646,23 @@ func writeDerivedHermesConfig(sharedHome, hermesHome string, env map[string]stri
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("read shared config: %w", err)
+		}
+		// The overlay is about to be seeded from a home that carries no
+		// provider config, so the task runs with whatever the child's
+		// environment supplies and nothing else. That is a legitimate setup
+		// (an image that ships Hermes and injects OPENAI_API_KEY has no
+		// config.yaml and works fine), which is why this stays a warning
+		// rather than a hard failure — but when it is instead a source-home
+		// misresolution, this line is the only place the two paths can be
+		// told apart, and until GH #6872 it printed nothing at all. Name the
+		// source home: the user's own config is somewhere else, and Hermes'
+		// own error ("run `hermes model`") cannot say where.
+		if fi, statErr := os.Stat(sharedHome); statErr != nil || !fi.IsDir() {
+			logger.Warn("execenv: hermes source home does not exist; this task runs without file-backed provider config or credentials, though the environment may still supply them",
+				"source_home", sharedHome, "overlay_home", hermesHome)
+		} else {
+			logger.Warn("execenv: hermes source home has no config.yaml; this task runs without a configured provider unless the environment supplies one",
+				"source_home", sharedHome, "overlay_home", hermesHome)
 		}
 		doc := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode, Tag: "!!map"}}}
 		if err := setHermesExternalDirs(doc, computeHermesExternalDirs(sharedHome, nil, env)); err != nil {

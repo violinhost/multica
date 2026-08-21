@@ -259,7 +259,7 @@ function LoginPageContent() {
         <div className="flex min-h-screen items-center justify-center">
           <Card className="w-full max-w-sm">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl">Sign-in Failed</CardTitle>
+              <CardTitle className="text-display-sm">Sign-in Failed</CardTitle>
               <CardDescription>{desktopError}</CardDescription>
             </CardHeader>
           </Card>
@@ -270,7 +270,7 @@ function LoginPageContent() {
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Opening Multica</CardTitle>
+            <CardTitle className="text-display-sm">Opening Multica</CardTitle>
             <CardDescription>
               {desktopToken
                 ? "You should see a prompt to open the Multica desktop app. If nothing happens, click the button below."

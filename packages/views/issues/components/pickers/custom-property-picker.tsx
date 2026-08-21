@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, ExternalLink } from "lucide-react";
+import { CalendarDays, Check, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import type { Issue, IssueProperty, IssuePropertyValue } from "@multica/core/types";
+import { hasUnknownActorRef } from "@multica/core/types";
 import {
   useSetIssueProperty,
   useUnsetIssueProperty,
@@ -23,6 +24,41 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { useT } from "../../../i18n";
 import { PropertyPicker, PickerItem } from "./property-picker";
+import { ActorPropertyPicker, ActorPropertyDisplay } from "./actor-property-picker";
+
+const EDITABLE_PROPERTY_TYPES = [
+  "select",
+  "multi_select",
+  "date",
+  "checkbox",
+  "text",
+  "number",
+  "url",
+  "actor",
+  "multi_actor",
+];
+
+/**
+ * Whether the editor must degrade to read-only (Clear is still offered, so a
+ * stale value can always be cleaned up). Three reasons:
+ *
+ *   1. The definition is archived.
+ *   2. The definition's type is newer than this build.
+ *   3. A single `actor` value references a kind this build cannot parse. It
+ *      would otherwise render as empty and the user, believing the field is
+ *      unset, would overwrite a value they were never shown. `multi_actor` is
+ *      exempt: its toggle round-trips unknown entries instead of replacing the
+ *      whole value (MUL-6286 review).
+ */
+export function isCustomPropertyReadOnly(
+  property: IssueProperty,
+  value: IssuePropertyValue | undefined,
+): boolean {
+  if (property.archived) return true;
+  if (!EDITABLE_PROPERTY_TYPES.includes(property.type)) return true;
+  if (property.type === "actor" && hasUnknownActorRef(value)) return true;
+  return false;
+}
 
 /**
  * Value editor for one custom property on one issue. The editor shape
@@ -32,6 +68,8 @@ import { PropertyPicker, PickerItem } from "./property-picker";
  *   multi_select  → PropertyPicker with toggling items (stays open)
  *   date          → Calendar popover (mirrors DueDatePicker)
  *   checkbox      → Yes / No picker
+ *   actor         → member picker (commits and closes)
+ *   multi_actor   → member picker with toggling items (stays open)
  *   text/number/url → popover with an input, Enter commits
  *
  * Archived definitions render read-only: the popover only offers Clear
@@ -42,29 +80,80 @@ export function CustomPropertyValueEditor({
   issue,
   property,
   defaultOpen = false,
+  open,
+  onOpenChange,
 }: {
   issue: Issue;
   property: IssueProperty;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const { t } = useT("issues");
-  const [open, setOpen] = useState(defaultOpen);
   const setProperty = useSetIssueProperty();
   const unsetProperty = useUnsetIssueProperty();
-
   const value = issue.properties[property.id];
-  const hasValue = value !== undefined;
-
   const onError = (error: unknown) =>
     toast.error(error instanceof Error ? error.message : String(error));
 
-  const commit = (next: IssuePropertyValue) =>
-    setProperty.mutate(
-      { issueId: issue.id, propertyId: property.id, value: next },
-      { onError },
-    );
-  const clear = () =>
-    unsetProperty.mutate({ issueId: issue.id, propertyId: property.id }, { onError });
+  return (
+    <CustomPropertyValueInput
+      property={property}
+      value={value}
+      defaultOpen={defaultOpen}
+      open={open}
+      onOpenChange={onOpenChange}
+      onChange={(next) => {
+        if (next === undefined) {
+          unsetProperty.mutate(
+            { issueId: issue.id, propertyId: property.id },
+            { onError },
+          );
+          return;
+        }
+        setProperty.mutate(
+          { issueId: issue.id, propertyId: property.id, value: next },
+          { onError },
+        );
+      }}
+    />
+  );
+}
+
+/**
+ * Mutation-free custom-property editor. Create flows use this while an issue
+ * still exists only as a draft; issue detail wraps it above with the normal
+ * optimistic mutations.
+ */
+export function CustomPropertyValueInput({
+  property,
+  value,
+  onChange,
+  defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  trigger,
+  triggerRender,
+}: {
+  property: IssueProperty;
+  value: IssuePropertyValue | undefined;
+  onChange: (value: IssuePropertyValue | undefined) => void;
+  defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactNode;
+  triggerRender?: React.ReactElement<Record<string, unknown>>;
+}) {
+  const { t } = useT("issues");
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = controlledOnOpenChange ?? setInternalOpen;
+  const hasValue = value !== undefined;
+
+  const commit = (next: IssuePropertyValue) => onChange(next);
+  const clear = () => onChange(undefined);
+  const valueTrigger = trigger ?? (
+    <CustomPropertyValueDisplay property={property} value={value} />
+  );
 
   const emptyLabel = (
     <span className="text-muted-foreground">
@@ -72,27 +161,23 @@ export function CustomPropertyValueEditor({
     </span>
   );
 
-  const clearFooter = hasValue ? (
-    <Button
-      variant="ghost"
-      size="xs"
+  // Empty value as the first row, not a footer button — the position every
+  // other picker uses for "no value", and being a real row it can carry the
+  // checkmark when the property is unset.
+  const emptyRow = (
+    <PickerItem
+      emptyValue
+      selected={!hasValue}
       onClick={() => {
         clear();
         setOpen(false);
       }}
-      className="w-full justify-start text-muted-foreground hover:text-foreground"
     >
-      {t(($) => $.pickers.custom_property.clear_action)}
-    </Button>
-  ) : undefined;
+      <span className="text-muted-foreground">{t(($) => $.pickers.custom_property.none)}</span>
+    </PickerItem>
+  );
 
-  // Archived (or unknown-type) definitions: read-only display; the only
-  // offered action is Clear so stale values can still be cleaned up.
-  const readOnly =
-    property.archived ||
-    !["select", "multi_select", "date", "checkbox", "text", "number", "url"].includes(
-      property.type,
-    );
+  const readOnly = isCustomPropertyReadOnly(property, value);
 
   if (readOnly) {
     return (
@@ -100,11 +185,14 @@ export function CustomPropertyValueEditor({
         open={open}
         onOpenChange={setOpen}
         align="start"
-        trigger={<CustomPropertyValueDisplay property={property} value={value} />}
-        footer={clearFooter}
+        trigger={valueTrigger}
+        triggerRender={triggerRender}
       >
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">
-          {t(($) => $.pickers.custom_property.archived_hint)}
+        {emptyRow}
+        <p className="px-2 py-1.5 text-caption text-muted-foreground">
+          {property.archived
+            ? t(($) => $.pickers.custom_property.archived_hint)
+            : t(($) => $.pickers.custom_property.unknown_value_hint)}
         </p>
       </PropertyPicker>
     );
@@ -119,9 +207,10 @@ export function CustomPropertyValueEditor({
           onOpenChange={setOpen}
           align="start"
           searchable={options.length > 7}
-          trigger={<CustomPropertyValueDisplay property={property} value={value} />}
-          footer={clearFooter}
+          trigger={valueTrigger}
+          triggerRender={triggerRender}
         >
+          {emptyRow}
           {options.map((option) => (
             <PickerItem
               key={option.id}
@@ -154,9 +243,10 @@ export function CustomPropertyValueEditor({
           onOpenChange={setOpen}
           align="start"
           searchable={options.length > 7}
-          trigger={<CustomPropertyValueDisplay property={property} value={value} />}
-          footer={clearFooter}
+          trigger={valueTrigger}
+          triggerRender={triggerRender}
         >
+          {emptyRow}
           {options.map((option) => (
             <PickerItem
               key={option.id}
@@ -170,14 +260,45 @@ export function CustomPropertyValueEditor({
         </PropertyPicker>
       );
     }
+    case "actor":
+    case "multi_actor":
+      return (
+        <ActorPropertyPicker
+          property={property}
+          value={value}
+          onChange={onChange}
+          open={open}
+          onOpenChange={setOpen}
+          trigger={valueTrigger}
+          triggerRender={triggerRender}
+          emptyRow={emptyRow}
+        />
+      );
     case "date": {
       const date = typeof value === "string" ? dateOnlyToLocalDate(value) : undefined;
       return (
         <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden">
-            <CustomPropertyValueDisplay property={property} value={value} />
+          <PopoverTrigger
+            className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden"}
+            render={triggerRender}
+          >
+            {valueTrigger}
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
+            {/* Empty value above the calendar — same position as DateOnlyPicker. */}
+            <button
+              type="button"
+              onClick={() => {
+                clear();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-3 border-b px-3 py-2 text-left text-body transition-colors hover:bg-accent"
+            >
+              <span className="flex min-w-0 flex-1 items-center gap-2 text-muted-foreground">
+                {t(($) => $.pickers.custom_property.none)}
+              </span>
+              <Check className={`h-3.5 w-3.5 shrink-0 text-muted-foreground ${date ? "invisible" : ""}`} />
+            </button>
             <Calendar
               mode="single"
               selected={date}
@@ -187,21 +308,6 @@ export function CustomPropertyValueEditor({
                 setOpen(false);
               }}
             />
-            {date && (
-              <div className="border-t px-3 py-2">
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => {
-                    clear();
-                    setOpen(false);
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  {t(($) => $.pickers.custom_property.clear_action)}
-                </Button>
-              </div>
-            )}
           </PopoverContent>
         </Popover>
       );
@@ -212,9 +318,10 @@ export function CustomPropertyValueEditor({
           open={open}
           onOpenChange={setOpen}
           align="start"
-          trigger={<CustomPropertyValueDisplay property={property} value={value} />}
-          footer={clearFooter}
+          trigger={valueTrigger}
+          triggerRender={triggerRender}
         >
+          {emptyRow}
           <PickerItem
             selected={value === true}
             onClick={() => {
@@ -245,6 +352,8 @@ export function CustomPropertyValueEditor({
           onCommit={commit}
           onClear={clear}
           emptyLabel={emptyLabel}
+          trigger={valueTrigger}
+          triggerRender={triggerRender}
         />
       );
   }
@@ -259,6 +368,8 @@ function TextishPropertyEditor({
   onCommit,
   onClear,
   emptyLabel,
+  trigger,
+  triggerRender,
 }: {
   property: IssueProperty;
   value: IssuePropertyValue | undefined;
@@ -267,6 +378,8 @@ function TextishPropertyEditor({
   onCommit: (next: IssuePropertyValue) => void;
   onClear: () => void;
   emptyLabel: React.ReactNode;
+  trigger?: React.ReactNode;
+  triggerRender?: React.ReactElement<Record<string, unknown>>;
 }) {
   const { t } = useT("issues");
   const [draft, setDraft] = useState("");
@@ -301,12 +414,15 @@ function TextishPropertyEditor({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden">
-        {value === undefined ? (
+      <PopoverTrigger
+        className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden"}
+        render={triggerRender}
+      >
+        {trigger ?? (value === undefined ? (
           emptyLabel
         ) : (
           <CustomPropertyValueDisplay property={property} value={value} />
-        )}
+        ))}
       </PopoverTrigger>
       <PopoverContent className="w-64 p-2" align="start">
         <form
@@ -397,7 +513,7 @@ export function CustomPropertyValueDisplay({
           {selected.map((option) => (
             <span
               key={option.id}
-              className="inline-flex max-w-32 items-center gap-1 rounded-full border border-surface-border px-1.5 py-px text-[11px]"
+              className="inline-flex max-w-32 items-center gap-1 rounded-full border border-surface-border px-1.5 py-px text-micro"
             >
               <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: option.color }} />
               <span className="truncate">{option.name}</span>
@@ -406,6 +522,18 @@ export function CustomPropertyValueDisplay({
         </span>
       );
     }
+    case "actor":
+    case "multi_actor":
+      return (
+        <ActorPropertyDisplay
+          value={value}
+          emptyLabel={
+            <span className="text-muted-foreground">
+              {t(($) => $.pickers.custom_property.empty)}
+            </span>
+          }
+        />
+      );
     case "date":
       return (
         <span className="flex items-center gap-1.5">

@@ -200,7 +200,7 @@ func (h *Handler) VelafiQuickAdd(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Broadcast member:added so existing clients update their member lists.
-	memberResp := memberWithUserResponse(member, user)
+	memberResp := h.memberWithUserResponse(member, user)
 	eventPayload := map[string]any{"member": memberResp}
 	if ws, err := h.Queries.GetWorkspace(r.Context(), wsUUID); err == nil {
 		eventPayload["workspace_name"] = ws.Name
@@ -208,7 +208,7 @@ func (h *Handler) VelafiQuickAdd(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventMemberAdded, workspaceID, "member", callerID, eventPayload)
 
 	writeJSON(w, http.StatusCreated, VelafiQuickAddResponse{
-		User:           userToResponse(user),
+		User:           h.userToResponse(user),
 		Member:         memberResp,
 		IsPendingLogin: isPending,
 		WasUserCreated: wasUserCreated,
