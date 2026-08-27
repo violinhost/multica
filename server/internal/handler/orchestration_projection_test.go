@@ -24,6 +24,9 @@ func projectionIngressFixture(t *testing.T) (issueID, installationID string, req
 	if !projectionTablesReady {
 		t.Skip("orchestration projection migrations are not applied")
 	}
+	// The shared handler fixture creates its workspace with raw SQL, so it does
+	// not get the status catalog a normal workspace creation seeds.
+	seedTestCatalog(t)
 
 	installationID = dbfx.Insert(t, "plugin_installation", testutil.Cols{
 		"workspace_id":   testWorkspaceID,
@@ -164,18 +167,51 @@ func TestUpsertPluginOrchestrationProjectionPersistsReceiptAndGuardsGeneration(t
 		t.Fatalf("receipt count=%d, want 1", receiptCount)
 	}
 
-	conflict := projectionRequest(t, issueID, "receipt-other", "digest-other", 1, updatedRevision)
+	// Exact receipt replay is idempotent: it returns the accepted projection
+	// without another revision bump or receipt/activity-producing write.
+	replay := projectionRequest(t, issueID, "receipt-1", "digest-1", 1, updatedRevision)
+	recorder = httptest.NewRecorder()
+	testHandler.UpsertPluginOrchestrationProjection(recorder, request(replay))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("idempotent replay: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	replayRevision, replayStatus := issueRevisionAndStatus(t, issueID)
+	if replayRevision != updatedRevision || replayStatus != originalStatus {
+		t.Fatalf("replay changed issue: revision=%d status=%q; want revision=%d status=%q", replayRevision, replayStatus, updatedRevision, originalStatus)
+	}
+
+	// A strictly higher numeric generation is a new receipt and succeeds.
+	higher := projectionRequest(t, issueID, "receipt-2", "digest-2", 2, updatedRevision)
+	recorder = httptest.NewRecorder()
+	testHandler.UpsertPluginOrchestrationProjection(recorder, request(higher))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("higher generation: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	higherRevision, higherStatus := issueRevisionAndStatus(t, issueID)
+	if higherRevision != updatedRevision+1 || higherStatus != originalStatus {
+		t.Fatalf("higher generation issue state: revision=%d status=%q; want revision=%d status=%q", higherRevision, higherStatus, updatedRevision+1, originalStatus)
+	}
+
+	// A delayed lower generation must fail closed after the higher receipt.
+	lower := projectionRequest(t, issueID, "receipt-lower", "digest-lower", 1, higherRevision)
+	recorder = httptest.NewRecorder()
+	testHandler.UpsertPluginOrchestrationProjection(recorder, request(lower))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("lower generation: status=%d body=%s, want 409", recorder.Code, recorder.Body.String())
+	}
+
+	conflict := projectionRequest(t, issueID, "receipt-other", "digest-other", 2, higherRevision)
 	recorder = httptest.NewRecorder()
 	testHandler.UpsertPluginOrchestrationProjection(recorder, request(conflict))
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("same generation with different receipt: status=%d body=%s, want 409", recorder.Code, recorder.Body.String())
 	}
 	finalRevision, finalStatus := issueRevisionAndStatus(t, issueID)
-	if finalRevision != updatedRevision || finalStatus != originalStatus {
-		t.Fatalf("generation conflict changed issue: revision=%d status=%q; want revision=%d status=%q", finalRevision, finalStatus, updatedRevision, originalStatus)
+	if finalRevision != higherRevision || finalStatus != originalStatus {
+		t.Fatalf("generation conflict changed issue: revision=%d status=%q; want revision=%d status=%q", finalRevision, finalStatus, higherRevision, originalStatus)
 	}
-	if count := dbfx.Count(t, `SELECT count(*) FROM issue_orchestration_projection_receipt WHERE issue_id = $1`, issueID); count != 1 {
-		t.Fatalf("generation conflict created %d receipts, want 1", count)
+	if count := dbfx.Count(t, `SELECT count(*) FROM issue_orchestration_projection_receipt WHERE issue_id = $1`, issueID); count != 2 {
+		t.Fatalf("generation conflict created %d receipts, want 2", count)
 	}
 
 }
