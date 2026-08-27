@@ -119,6 +119,14 @@ func (h *Handler) UpsertPluginOrchestrationProjection(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
+	// This is a deployment-owned capability marker on the installation, not a
+	// request assertion. A different plugin granted the narrow scope cannot opt
+	// itself into becoming the Automultica receipt producer.
+	var config map[string]any
+	if json.Unmarshal(caller.Installation.Config, &config) != nil || config["automultica_projection_producer"] != true {
+		writeError(w, http.StatusForbidden, "this Plugin installation is not configured as the Automultica projection producer")
+		return
+	}
 	var req orchestrationProjectionRequest
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
