@@ -38,7 +38,39 @@ function issue(revision: number, title: string): Issue {
   };
 }
 
+const projection = {
+  schema_version: 1,
+  producer: "automultica" as const,
+  receipt_id: "receipt-1",
+  receipt_digest: "digest-1",
+  workflow_id: "workflow-1",
+  stage: "handoff",
+  role: "Coding_Agent",
+  substate: "materializing",
+  reason_code: "awaiting_receipt",
+  since: "2026-08-27T12:00:00Z",
+  elapsed_seconds: 1,
+  sla_posture: "within_sla" as const,
+  route_generation: 1,
+  native_status: { key: "in_progress", category: "in_progress" as const, definition_id: "status-1" },
+  next_action: { code: "await_run" },
+};
+
 describe("issue realtime revision admission", () => {
+  it("replaces then clears the optional projection only from full issue snapshots", () => {
+    const qc = new QueryClient();
+    const detailKey = issueKeys.detail("ws-1", "issue-1");
+    qc.setQueryData(detailKey, { ...issue(1, "same title"), orchestration_projection: projection });
+
+    onIssueUpdated(qc, "ws-1", { ...issue(2, "same title"), orchestration_projection: { ...projection, stage: "execution" } });
+    expect(qc.getQueryData<Issue>(detailKey)?.orchestration_projection?.stage).toBe("execution");
+
+    // A full response that omits the optional field must clear stale cache
+    // data; no title/status/category/run value is used as a substitute.
+    onIssueUpdated(qc, "ws-1", { ...issue(3, "same title"), orchestration_projection: undefined });
+    expect(qc.getQueryData<Issue>(detailKey)?.orchestration_projection).toBeUndefined();
+  });
+
   it("heals an older projection without replacing an equal-revision detail", () => {
     const qc = new QueryClient();
     qc.setQueryData(issueKeys.detail("ws-1", "issue-1"), issue(3, "latest"));

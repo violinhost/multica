@@ -290,7 +290,7 @@ function priorityLabel(priority: string, t: ActivityT): string {
   return priority;
 }
 
-function formatActivity(
+export function formatActivity(
   entry: TimelineEntry,
   t: ActivityT,
   resolveActorName?: (type: string, id: string) => string,
