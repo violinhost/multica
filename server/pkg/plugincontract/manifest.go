@@ -86,6 +86,10 @@ const (
 	ScopeMembersRead      = "members:read"
 	ScopeStorageUser      = "storage:user"
 	ScopeStorageWorkspace = "storage:workspace"
+	// ScopeAutomulticaProjectionWrite is intentionally narrower than
+	// issues:write: it can only submit receipt-bound projection state through
+	// the dedicated ingress and never changes native issue status.
+	ScopeAutomulticaProjectionWrite = "automultica:projection:write"
 
 	// ScopeNetPrefix guards outbound network access: both the iframe CSP
 	// connect-src allowlist and the hook transport host check derive from it.
@@ -104,16 +108,17 @@ const (
 )
 
 var fixedScopes = map[string]bool{
-	ScopeIssuesRead:       true,
-	ScopeIssuesWrite:      true,
-	ScopeCommentsRead:     true,
-	ScopeCommentsWrite:    true,
-	ScopeTasksRead:        true,
-	ScopeTasksWrite:       true,
-	ScopeAgentsRead:       true,
-	ScopeMembersRead:      true,
-	ScopeStorageUser:      true,
-	ScopeStorageWorkspace: true,
+	ScopeIssuesRead:                 true,
+	ScopeIssuesWrite:                true,
+	ScopeCommentsRead:               true,
+	ScopeCommentsWrite:              true,
+	ScopeTasksRead:                  true,
+	ScopeTasksWrite:                 true,
+	ScopeAgentsRead:                 true,
+	ScopeMembersRead:                true,
+	ScopeStorageUser:                true,
+	ScopeStorageWorkspace:           true,
+	ScopeAutomulticaProjectionWrite: true,
 }
 
 func hasScope(scopes []string, want string) bool {

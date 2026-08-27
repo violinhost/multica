@@ -722,6 +722,47 @@ type IssueLabel struct {
 	Description  string             `json:"description"`
 }
 
+type IssueOrchestrationProjection struct {
+	IssueID                   pgtype.UUID        `json:"issue_id"`
+	WorkspaceID               pgtype.UUID        `json:"workspace_id"`
+	SchemaVersion             int32              `json:"schema_version"`
+	Producer                  string             `json:"producer"`
+	ProducerInstallationID    pgtype.UUID        `json:"producer_installation_id"`
+	ReceiptID                 string             `json:"receipt_id"`
+	ReceiptDigest             string             `json:"receipt_digest"`
+	ParentIssueID             pgtype.UUID        `json:"parent_issue_id"`
+	WorkflowID                string             `json:"workflow_id"`
+	Stage                     string             `json:"stage"`
+	Role                      string             `json:"role"`
+	OwnerType                 pgtype.Text        `json:"owner_type"`
+	OwnerID                   pgtype.UUID        `json:"owner_id"`
+	Substate                  string             `json:"substate"`
+	ReasonCode                string             `json:"reason_code"`
+	Since                     pgtype.Timestamptz `json:"since"`
+	ElapsedSeconds            int64              `json:"elapsed_seconds"`
+	SlaPosture                string             `json:"sla_posture"`
+	RouteGeneration           int64              `json:"route_generation"`
+	AuthoritativeChildIssueID pgtype.UUID        `json:"authoritative_child_issue_id"`
+	AuthoritativeRunID        pgtype.UUID        `json:"authoritative_run_id"`
+	NativeStatusKey           string             `json:"native_status_key"`
+	NativeStatusCategory      string             `json:"native_status_category"`
+	NativeStatusDefinitionID  pgtype.UUID        `json:"native_status_definition_id"`
+	NextActionCode            string             `json:"next_action_code"`
+	NextActionTarget          pgtype.Text        `json:"next_action_target"`
+	IssueRevision             int64              `json:"issue_revision"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+}
+
+type IssueOrchestrationProjectionReceipt struct {
+	ProducerInstallationID pgtype.UUID        `json:"producer_installation_id"`
+	ReceiptID              string             `json:"receipt_id"`
+	ReceiptDigest          string             `json:"receipt_digest"`
+	IssueID                pgtype.UUID        `json:"issue_id"`
+	RouteGeneration        int64              `json:"route_generation"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+}
+
 type IssueProperty struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

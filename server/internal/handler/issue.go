@@ -82,6 +82,9 @@ type IssueResponse struct {
 	// preserves whatever labels are already in cache. nil pointer = "field
 	// absent, do not touch"; non-nil (incl. empty slice) = authoritative list.
 	Labels *[]LabelResponse `json:"labels,omitempty"`
+	// OrchestrationProjection is an optional, receipt-bound read projection.
+	// Native Status remains the only current-status authority.
+	OrchestrationProjection *OrchestrationProjectionResponse `json:"orchestration_projection,omitempty"`
 }
 
 // validIssuePriorities mirrors the CHECK constraint on the issue table. Write
@@ -1537,6 +1540,7 @@ LIMIT %s OFFSET %s`, whereSql, orderBy, limitRef, offsetRef)
 		resp[i].Labels = &labels
 	}
 	h.fillStatusCategories(ctx, wsUUID, resp)
+	h.fillOrchestrationProjections(ctx, wsUUID, ids, resp)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issues": resp,
@@ -2174,6 +2178,7 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 	prefix := h.getIssuePrefix(r.Context(), issue.WorkspaceID)
 	resp := issueToResponse(issue, prefix)
 	h.fillStatusCategory(r.Context(), issue.WorkspaceID, &resp)
+	h.fillOrchestrationProjection(r.Context(), issue, &resp)
 	detailLabels := h.labelsByIssue(r.Context(), issue.WorkspaceID, []pgtype.UUID{issue.ID})[uuidToString(issue.ID)]
 	if detailLabels == nil {
 		detailLabels = []LabelResponse{}

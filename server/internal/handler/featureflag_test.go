@@ -19,6 +19,10 @@ func withCustomIssueStatusesFlag(t *testing.T, h *Handler, enabled bool) {
 	withFeatureFlag(t, h, featureflags.CustomIssueStatuses, enabled)
 }
 
+func withAutomulticaOrchestrationProjectionFlag(t *testing.T, h *Handler, enabled bool) {
+	withFeatureFlag(t, h, featureflags.AutomulticaOrchestrationProjection, enabled)
+}
+
 func withFeatureFlag(t *testing.T, h *Handler, key string, enabled bool) {
 	t.Helper()
 	provider := featureflag.NewStaticProvider()

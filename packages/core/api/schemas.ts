@@ -1008,6 +1008,18 @@ export const IssueTriggerPreviewSchema = z.object({
 // to {} so consumers never need to nil-guard `issue.metadata`.
 const IssueMetadataSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({});
 
+const OrchestrationProjectionSchemaV1 = z.object({
+  schema_version: z.literal(1), producer: z.literal("automultica"), receipt_id: z.string(), receipt_digest: z.string(),
+  workflow_id: z.string(), stage: z.string(), role: z.string(), substate: z.string(), reason_code: z.string(), since: z.string(),
+  elapsed_seconds: z.number().nonnegative(), sla_posture: z.enum(["within_sla", "at_risk", "breached", "unknown"]), route_generation: z.number().int().positive(),
+  native_status: z.object({ key: z.string(), category: z.string(), definition_id: z.string() }),
+  next_action: z.object({ code: z.string(), target: z.string().optional() }),
+});
+const OrchestrationProjectionSchema = z.unknown().transform((value) => {
+  const parsed = OrchestrationProjectionSchemaV1.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}).optional();
+
 export const IssueSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
@@ -1047,6 +1059,7 @@ export const IssueSchema = z.object({
   // Optional for compatibility with older self-hosted backends; a current
   // backend emits null until its historical backfill reaches the issue.
   last_activity_at: z.string().nullable().optional(),
+  orchestration_projection: OrchestrationProjectionSchema,
 }).loose();
 
 export const ListIssuesResponseSchema = z.object({

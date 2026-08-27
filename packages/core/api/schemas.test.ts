@@ -109,6 +109,20 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
     ).toThrow();
   });
 
+  it("keeps a valid v1 orchestration projection optional and drops an unknown version", () => {
+    const valid = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, orchestration_projection: {
+        schema_version: 1, producer: "automultica", receipt_id: "r1", receipt_digest: "d1", workflow_id: "w1",
+        stage: "analysis", role: "Analysis_Agent", substate: "active", reason_code: "handoff", since: "2026-01-01T00:00:00Z",
+        elapsed_seconds: 0, sla_posture: "within_sla", route_generation: 1,
+        native_status: { key: "todo", category: "todo", definition_id: "status-1" }, next_action: { code: "coding_handoff", target: "Coding_Agent" },
+      }}], total: 1,
+    });
+    expect(valid.issues[0]?.orchestration_projection?.stage).toBe("analysis");
+    const unknown = ListIssuesResponseSchema.parse({ issues: [{ ...baseIssue, orchestration_projection: { schema_version: 2 } }], total: 1 });
+    expect(unknown.issues[0]?.orchestration_projection).toBeUndefined();
+  });
+
   it("accepts a primitive metadata KV map", () => {
     const payload = {
       issues: [

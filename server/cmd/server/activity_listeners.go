@@ -88,6 +88,33 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 			}
 		}
 
+		if projectionChanged, _ := payload["orchestration_projection_changed"].(bool); projectionChanged && issue.OrchestrationProjection != nil {
+			projection := issue.OrchestrationProjection
+			details, _ := json.Marshal(map[string]any{
+				"schema_version":   projection.SchemaVersion,
+				"producer":         projection.Producer,
+				"receipt_id":       projection.ReceiptID,
+				"receipt_digest":   projection.ReceiptDigest,
+				"workflow_id":      projection.WorkflowID,
+				"stage":            projection.Stage,
+				"role":             projection.Role,
+				"substate":         projection.Substate,
+				"reason_code":      projection.ReasonCode,
+				"route_generation": projection.RouteGeneration,
+				"next_action_code": projection.NextAction.Code,
+			})
+			activity, err := queries.CreateActivity(ctx, db.CreateActivityParams{
+				ID: dbid.NewV7(), WorkspaceID: parseUUID(issue.WorkspaceID), IssueID: parseUUID(issue.ID),
+				ActorType: util.StrToText(e.ActorType), ActorID: optionalUUID(e.ActorID),
+				Action: "orchestration_projection_updated", Details: details,
+			})
+			if err != nil {
+				slog.Error("activity: failed to record orchestration projection", "issue_id", issue.ID, "error", err)
+			} else {
+				publishActivityEvent(bus, e, activity)
+			}
+		}
+
 		if priorityChanged {
 			prevPriority, _ := payload["prev_priority"].(string)
 			details, _ := json.Marshal(map[string]string{

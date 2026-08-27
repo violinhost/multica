@@ -1381,6 +1381,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/context", h.GetPluginContext)
 			r.Get("/issues/{id}", h.GetPluginIssue)
 			r.Patch("/issues/{id}", h.PatchPluginIssue)
+			r.Put("/issues/{id}/orchestration-projection", h.UpsertPluginOrchestrationProjection)
 			r.Get("/issues/{id}/comments", h.ListPluginComments)
 			r.Post("/issues/{id}/comments", h.CreatePluginComment)
 			r.Get("/storage/{scope}", h.ListPluginStorage)

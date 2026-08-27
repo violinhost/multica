@@ -41,6 +41,10 @@ const (
 	// true rollback requires migrating those issues back to built-in statuses
 	// first (migration 337's down direction refuses precisely because of this).
 	CustomIssueStatuses = "custom_issue_statuses"
+	// AutomulticaOrchestrationProjection gates the receipt-bound plugin ingress.
+	// It defaults off so shipping the reader/schema cannot accidentally enable an
+	// external writer before the configured Automultica installation is staged.
+	AutomulticaOrchestrationProjection = "automultica_orchestration_projection"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation
 	// entry on this config decision receive the permanently enabled behavior.
@@ -84,6 +88,10 @@ func PluginsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
 // value its older pods cannot interpret.
 func CustomIssueStatusesEnabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, CustomIssueStatuses, false)
+}
+
+func AutomulticaOrchestrationProjectionEnabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, AutomulticaOrchestrationProjection, false)
 }
 
 func EvaluateFrontendPublicFlags(ctx context.Context, flags *featureflag.Service) map[string]bool {

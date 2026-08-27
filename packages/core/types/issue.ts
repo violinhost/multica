@@ -54,6 +54,24 @@ export interface IssueReaction {
 export type IssueMetadataValue = string | number | boolean;
 export type IssueMetadata = Record<string, IssueMetadataValue>;
 
+export interface OrchestrationProjection {
+  schema_version: number;
+  producer: "automultica";
+  receipt_id: string;
+  receipt_digest: string;
+  workflow_id: string;
+  stage: string;
+  role: string;
+  substate: string;
+  reason_code: string;
+  since: string;
+  elapsed_seconds: number;
+  sla_posture: "within_sla" | "at_risk" | "breached" | "unknown";
+  route_generation: number;
+  native_status: { key: string; category: IssueStatusCategory; definition_id: string };
+  next_action: { code: string; target?: string };
+}
+
 export interface Issue {
   id: string;
   workspace_id: string;
@@ -102,4 +120,6 @@ export interface Issue {
    * created_at/updated_at values are second-precision; parse before comparing.
    */
   last_activity_at?: string | null;
+  /** Optional receipt-bound projection; absence is normal for ordinary issues. */
+  orchestration_projection?: OrchestrationProjection;
 }
