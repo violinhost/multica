@@ -81,7 +81,6 @@ func projectionRequest(t *testing.T, issueID, receiptID, receiptDigest string, r
 		"route_generation":        routeGeneration,
 		"expected_issue_revision": expectedRevision,
 		"native_status": map[string]any{
-			"id":            statusID,
 			"definition_id": statusID,
 			"key":           statusKey,
 			"category":      statusCategory,
