@@ -100,6 +100,19 @@ export function formatActivity(
       const n = entry.coalesced_count ?? 1;
       return n > 1 ? `failed ${n} tasks` : "failed a task";
     }
+    case "orchestration_projection_updated": {
+      const context = [details.stage, details.role].filter(Boolean).join(" / ");
+      const state = details.substate
+        ? details.reason_code
+          ? `${details.substate} (${details.reason_code})`
+          : details.substate
+        : details.reason_code;
+      const detail = [context, state].filter(Boolean).join(" — ");
+      const nextAction = details.next_action_code
+        ? `; next: ${details.next_action_code}`
+        : "";
+      return `updated orchestration${detail ? `: ${detail}` : ""}${nextAction}`;
+    }
     case "squad_leader_evaluated": {
       // Copy mirrors packages/views/locales/en/issues.json
       // (squad_leader_action / squad_leader_no_action / squad_leader_failed,

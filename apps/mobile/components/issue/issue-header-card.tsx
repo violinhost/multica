@@ -16,6 +16,30 @@ import type { Issue } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { AttributeRow } from "./attribute-row";
 import { AgentActivityRow } from "./agent-activity-row";
+import { orchestrationProjectionCardDetails } from "@/lib/orchestration-projection";
+
+function OrchestrationProjectionCard({
+  projection,
+}: {
+  projection: Issue["orchestration_projection"];
+}) {
+  const details = orchestrationProjectionCardDetails(projection);
+  if (!details) return null;
+
+  return (
+    <View className="rounded-md border border-border bg-card px-3 py-2 gap-1">
+      <Text className="text-xs font-medium text-foreground">
+        Orchestration · {details.title}
+      </Text>
+      <Text className="text-xs text-muted-foreground">
+        {details.state} · {details.reason}
+      </Text>
+      <Text className="text-xs text-muted-foreground">
+        Next: {details.nextAction}
+      </Text>
+    </View>
+  );
+}
 
 export function IssueHeaderCard({ issue }: { issue: Issue }) {
   return (
@@ -24,6 +48,9 @@ export function IssueHeaderCard({ issue }: { issue: Issue }) {
       <Text className="text-2xl font-bold text-foreground">
         {issue.title}
       </Text>
+      <OrchestrationProjectionCard
+        projection={issue.orchestration_projection}
+      />
       {/* Activity row sits between title and attributes — it represents
        *  "who's doing this issue right now / who has done it" (dynamic),
        *  which is higher-IA than the static property chips below.
