@@ -35,6 +35,9 @@ function OrchestrationProjectionCard({
         {details.state} · {details.reason}
       </Text>
       <Text className="text-xs text-muted-foreground">
+        Elapsed {details.elapsed} · SLA {details.sla}
+      </Text>
+      <Text className="text-xs text-muted-foreground">
         Next: {details.nextAction}
       </Text>
     </View>

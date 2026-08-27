@@ -30,6 +30,7 @@ import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useT } from "../../i18n";
+import { OrchestrationProjectionSummary } from "./orchestration-projection-summary";
 
 function formatDate(date: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
@@ -189,6 +190,12 @@ export const BoardCardContent = memo(function BoardCardContent({
       <p className="mt-1 text-body font-medium leading-snug line-clamp-2">
         {issue.title}
       </p>
+
+      {issue.orchestration_projection && (
+        <div className="mt-1.5">
+          <OrchestrationProjectionSummary projection={issue.orchestration_projection} compact />
+        </div>
+      )}
 
       {showDescription && (() => {
         const preview = descriptionPreview(issue.description!);

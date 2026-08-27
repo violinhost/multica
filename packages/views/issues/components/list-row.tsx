@@ -25,6 +25,7 @@ import { LabelChip } from "../../labels/label-chip";
 import { CustomStatusChip } from "./custom-status-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
+import { OrchestrationProjectionSummary } from "./orchestration-projection-summary";
 
 export interface ChildProgress {
   done: number;
@@ -118,6 +119,7 @@ function ListRowContent({
             {/* List sections are categories, so a custom status needs to name
                 itself on the row. Silent for built-ins. (MUL-6243) */}
             <CustomStatusChip status={issue.status} className="shrink-0" />
+            <OrchestrationProjectionSummary projection={issue.orchestration_projection} compact />
             {showChildProgress && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5">
                 <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />

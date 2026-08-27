@@ -92,6 +92,7 @@ import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
+import { OrchestrationProjectionSummary } from "./orchestration-projection-summary";
 import { useGitHubSettings } from "@multica/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
@@ -340,6 +341,16 @@ function formatActivity(
       return t(($) => $.activity.task_completed, { count: entry.coalesced_count ?? 1 });
     case "task_failed":
       return t(($) => $.activity.task_failed, { count: entry.coalesced_count ?? 1 });
+    case "orchestration_projection_updated": {
+      const context = [details.stage, details.role].filter(Boolean).join(" / ");
+      const state = details.substate
+        ? details.reason_code
+          ? `${details.substate} (${details.reason_code})`
+          : details.substate
+        : details.reason_code;
+      const next = details.next_action_code ? `; next: ${details.next_action_code}` : "";
+      return `updated orchestration${[context, state].filter(Boolean).length ? `: ${[context, state].filter(Boolean).join(" — ")}` : ""}${next}`;
+    }
     case "squad_leader_evaluated": {
       const reason = details.reason?.trim();
       switch (details.outcome) {
@@ -3366,6 +3377,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </div>
 
             <LocalDirectoryHint projectId={issue?.project_id} />
+
+            <OrchestrationProjectionSummary projection={issue?.orchestration_projection} />
 
             {/* The "agent is working" live signal now lives in the header
                 (IssueAgentHeaderChip) so it stays in one fixed place and

@@ -31,6 +31,8 @@ describe("orchestrationProjectionCardDetails", () => {
       title: "execution · worker",
       state: "running",
       reason: "work_started",
+      elapsed: "0s",
+      sla: "within_sla",
       nextAction: "await_completion",
     });
   });
