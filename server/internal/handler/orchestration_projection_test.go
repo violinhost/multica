@@ -7,13 +7,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
 func projectionIngressFixture(t *testing.T) (issueID, installationID string, request func(map[string]any) *http.Request) {
 	t.Helper()
-	withPluginsV1Flag(t, testHandler, true)
-	withAutomulticaOrchestrationProjectionFlag(t, testHandler, true)
+	withFeatureFlags(t, testHandler, map[string]bool{
+		featureflags.PluginsV1:                          true,
+		featureflags.AutomulticaOrchestrationProjection: true,
+	})
 	var projectionTablesReady bool
 	if err := testPool.QueryRow(context.Background(), `
 		SELECT to_regclass('plugin_installation') IS NOT NULL
