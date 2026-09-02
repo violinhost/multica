@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-05-04T04:29:47.462593+00:00",
+  "generated_at": "2026-09-02T04:15:46.026526+00:00",
   "app_id": "cli_a97f9e7ed438de15",
-  "count": 71,
+  "count": 100,
   "users": [
     {
       "name": "Holiday",
@@ -14,8 +14,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "CFO",
+      "is_activated": null
     },
     {
       "name": "Yukki",
@@ -28,8 +28,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Treasury Analyst",
+      "is_activated": null
     },
     {
       "name": "Miguel Lopez - Finance",
@@ -42,8 +42,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Accounting Manager",
+      "is_activated": null
     },
     {
       "name": "Luisina Veit - Finance",
@@ -56,8 +56,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Accounting Manager",
+      "is_activated": null
     },
     {
       "name": "包小方",
@@ -70,8 +70,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of Accounting & Reporting",
+      "is_activated": null
     },
     {
       "name": "刘皓然",
@@ -84,8 +84,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Corporate Accountant",
+      "is_activated": null
     },
     {
       "name": "Alejandro Perez",
@@ -98,8 +98,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Regional Accounting & Tax Lead",
+      "is_activated": null
     },
     {
       "name": "Bruce",
@@ -112,8 +112,8 @@
       "department_ids": [
         "od-b82b58d3805fbc33d13ee1e436cfdac2"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of FP&A & Strategic Finance",
+      "is_activated": null
     },
     {
       "name": "Henry Lin - Corp",
@@ -126,8 +126,8 @@
       "department_ids": [
         "od-fa2659d290727b5446f7fe8ce3d7a160"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Executive Assistant",
+      "is_activated": null
     },
     {
       "name": "Amelia Gao",
@@ -140,8 +140,8 @@
       "department_ids": [
         "od-acb3b6a8ec757d8b611998135456f342"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of Data",
+      "is_activated": null
     },
     {
       "name": "Roberto Femat",
@@ -154,8 +154,8 @@
       "department_ids": [
         "od-cee8318c497a6796c7bfc0f250d5d176"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of Communications & Events",
+      "is_activated": null
     },
     {
       "name": "Jane_US",
@@ -168,8 +168,8 @@
       "department_ids": [
         "od-cee8318c497a6796c7bfc0f250d5d176"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "CMO",
+      "is_activated": null
     },
     {
       "name": "Mariana Sosa - MKT",
@@ -182,8 +182,8 @@
       "department_ids": [
         "od-cee8318c497a6796c7bfc0f250d5d176"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Social Media Manager",
+      "is_activated": null
     },
     {
       "name": "Asher Dong",
@@ -196,8 +196,8 @@
       "department_ids": [
         "od-455225586a33fad9250b6f7ad2b70a3d"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Project Manager",
+      "is_activated": null
     },
     {
       "name": "罗诗韵",
@@ -210,8 +210,8 @@
       "department_ids": [
         "od-a5d301b1ffeafdbf9bc00ed62837c005"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Graphic Designer",
+      "is_activated": null
     },
     {
       "name": "wendy_ jin",
@@ -224,8 +224,8 @@
       "department_ids": [
         "od-a5d301b1ffeafdbf9bc00ed62837c005"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "UI/UX Designer",
+      "is_activated": null
     },
     {
       "name": "郭雨豪",
@@ -238,8 +238,8 @@
       "department_ids": [
         "od-d7d892616935b63592f8ab90cfbad2ca"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Web Frontend Engineer",
+      "is_activated": null
     },
     {
       "name": "justin.cao",
@@ -252,8 +252,8 @@
       "department_ids": [
         "od-d7d892616935b63592f8ab90cfbad2ca"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Web Frontend Lead",
+      "is_activated": null
     },
     {
       "name": "lihang",
@@ -266,8 +266,8 @@
       "department_ids": [
         "od-73b242bfd521e74c67eef2b16eef359c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Senior Backend Engineer",
+      "is_activated": null
     },
     {
       "name": "Camille Feng",
@@ -280,8 +280,8 @@
       "department_ids": [
         "od-73b242bfd521e74c67eef2b16eef359c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Senior Backend Engineer",
+      "is_activated": null
     },
     {
       "name": "Jackson Zhang",
@@ -294,8 +294,8 @@
       "department_ids": [
         "od-73b242bfd521e74c67eef2b16eef359c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "API Integration & Support Engineer",
+      "is_activated": null
     },
     {
       "name": "王小红",
@@ -308,8 +308,8 @@
       "department_ids": [
         "od-73b242bfd521e74c67eef2b16eef359c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Backend Engineer",
+      "is_activated": null
     },
     {
       "name": "Ethan",
@@ -322,8 +322,8 @@
       "department_ids": [
         "od-73b242bfd521e74c67eef2b16eef359c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Backend Engineer",
+      "is_activated": null
     },
     {
       "name": "骆杭祺",
@@ -336,8 +336,8 @@
       "department_ids": [
         "od-73b242bfd521e74c67eef2b16eef359c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Backend Engineer",
+      "is_activated": null
     },
     {
       "name": "Vincent Chan",
@@ -350,8 +350,8 @@
       "department_ids": [
         "od-e0787c41d679112c26ee4182fa681649"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of P & E",
+      "is_activated": null
     },
     {
       "name": "炯星",
@@ -364,8 +364,8 @@
       "department_ids": [
         "od-76da0c84fbd3b659051b97da79890d55"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Product Manager",
+      "is_activated": null
     },
     {
       "name": "闫春雷",
@@ -378,8 +378,8 @@
       "department_ids": [
         "od-32fcbb981c04a0feb0fed44b2ba31013"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "QA Engineer",
+      "is_activated": null
     },
     {
       "name": "liangxiaochuan",
@@ -392,8 +392,8 @@
       "department_ids": [
         "od-32fcbb981c04a0feb0fed44b2ba31013"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "QA Lead",
+      "is_activated": null
     },
     {
       "name": "Rebecca（井儿）",
@@ -406,8 +406,8 @@
       "department_ids": [
         "od-367e3bbc96e95f559a735fcc47162aa4"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "HR Director",
+      "is_activated": null
     },
     {
       "name": "Ana Conrique",
@@ -420,8 +420,8 @@
       "department_ids": [
         "od-367e3bbc96e95f559a735fcc47162aa4"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Latam HR Manager",
+      "is_activated": null
     },
     {
       "name": "Pela",
@@ -434,8 +434,8 @@
       "department_ids": [
         "od-2450663638590c96eea1045b7a80d7ee"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Operations Engineer",
+      "is_activated": null
     },
     {
       "name": "Jay Chen",
@@ -448,8 +448,8 @@
       "department_ids": [
         "od-2ceb613d8772bba783dbd4461a462c7f"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of Operations",
+      "is_activated": null
     },
     {
       "name": "Leticia Huang",
@@ -462,8 +462,8 @@
       "department_ids": [
         "od-2ceb613d8772bba783dbd4461a462c7f"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Operation Specialist",
+      "is_activated": null
     },
     {
       "name": "Julio Ballestero",
@@ -476,13 +476,13 @@
       "department_ids": [
         "od-2ceb613d8772bba783dbd4461a462c7f"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Operation",
+      "is_activated": null
     },
     {
       "name": "Olivia Wang",
       "en_name": "Olivia Wang - Corp",
-      "email": "",
+      "email": "olivia.wang@galactic.holdings",
       "open_id": "ou_28eeea8161ebf539d20f0c4d7f6af2f6",
       "union_id": "on_31f62e28e99b72f068350dca341c28f3",
       "user_id": null,
@@ -490,8 +490,8 @@
       "department_ids": [
         "od-2ceb613d8772bba783dbd4461a462c7f"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Operation Specialist",
+      "is_activated": null
     },
     {
       "name": "Jessica Huang",
@@ -504,8 +504,8 @@
       "department_ids": [
         "od-91daf4730659862a931fd457ff6bc687"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "CCO",
+      "is_activated": null
     },
     {
       "name": "Matias Reyes",
@@ -518,8 +518,8 @@
       "department_ids": [
         "od-562d228c5eed88ee8b9d708c63055c68"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of FIBD",
+      "is_activated": null
     },
     {
       "name": "Matias Marasca",
@@ -533,8 +533,8 @@
         "od-00aee76d936d02066d2b69d2480ca474",
         "od-562d228c5eed88ee8b9d708c63055c68"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Trading Operations Director",
+      "is_activated": null
     },
     {
       "name": "Zoe Li",
@@ -547,8 +547,8 @@
       "department_ids": [
         "od-562d228c5eed88ee8b9d708c63055c68"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Regional BD Manager - Asia",
+      "is_activated": null
     },
     {
       "name": "Sergio Lins",
@@ -561,8 +561,8 @@
       "department_ids": [
         "od-00aee76d936d02066d2b69d2480ca474"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Trading Operations Specialist",
+      "is_activated": null
     },
     {
       "name": "Michell Alejandro Morales",
@@ -575,8 +575,8 @@
       "department_ids": [
         "od-00aee76d936d02066d2b69d2480ca474"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Trading Operations Manager",
+      "is_activated": null
     },
     {
       "name": "María Belén Sotto",
@@ -589,8 +589,8 @@
       "department_ids": [
         "od-00aee76d936d02066d2b69d2480ca474"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Trading Operations Specialist",
+      "is_activated": null
     },
     {
       "name": "Chris Wang",
@@ -603,8 +603,8 @@
       "department_ids": [
         "od-00aee76d936d02066d2b69d2480ca474"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": null,
+      "is_activated": null
     },
     {
       "name": "Michael Aangjeli - Treasury & Liquidity",
@@ -617,8 +617,8 @@
       "department_ids": [
         "od-00aee76d936d02066d2b69d2480ca474"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of Treasury and Liquidity",
+      "is_activated": null
     },
     {
       "name": "Hongyi",
@@ -631,8 +631,8 @@
       "department_ids": [
         "od-07f47d901fea26a09a0c28272d440dfa"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of Revenue",
+      "is_activated": null
     },
     {
       "name": "Jerónimo Cafferata",
@@ -645,8 +645,8 @@
       "department_ids": [
         "od-e6e3ac7e7e0aabed5524b253e6ca0920"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Revenue Operations Specialist",
+      "is_activated": null
     },
     {
       "name": "石裕婷",
@@ -659,8 +659,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Account Executive",
+      "is_activated": null
     },
     {
       "name": "Andy Mai",
@@ -673,8 +673,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Account Executive",
+      "is_activated": null
     },
     {
       "name": "严江华",
@@ -687,8 +687,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Account Executive",
+      "is_activated": null
     },
     {
       "name": "Wenbin Wu - Sales",
@@ -701,8 +701,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": null,
+      "is_activated": null
     },
     {
       "name": "Facundo Picca - LATAM Sales",
@@ -715,8 +715,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Account Executive",
+      "is_activated": null
     },
     {
       "name": "Javier Roig Pérez",
@@ -729,8 +729,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Senior Account Executive",
+      "is_activated": null
     },
     {
       "name": "Diego",
@@ -743,8 +743,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Account Executive",
+      "is_activated": null
     },
     {
       "name": "Hugo",
@@ -757,8 +757,8 @@
       "department_ids": [
         "od-72b37d54f6298d298d0c7e5f802551da"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Client Onboarding Specialist",
+      "is_activated": null
     },
     {
       "name": "Aaron Rivera",
@@ -771,8 +771,8 @@
       "department_ids": [
         "od-72b37d54f6298d298d0c7e5f802551da"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Compliance Onboarding Analyst",
+      "is_activated": null
     },
     {
       "name": "Jose",
@@ -785,8 +785,8 @@
       "department_ids": [
         "od-72b37d54f6298d298d0c7e5f802551da"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Compliance Onboarding Analyst",
+      "is_activated": null
     },
     {
       "name": "Sonia",
@@ -799,8 +799,8 @@
       "department_ids": [
         "od-882f8d4c01a5e77bb956e42e67b8e36b"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Senior Sales Manager",
+      "is_activated": null
     },
     {
       "name": "Jerry Lee",
@@ -813,8 +813,8 @@
       "department_ids": [
         "od-882f8d4c01a5e77bb956e42e67b8e36b"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Customer Success Manager",
+      "is_activated": null
     },
     {
       "name": "Lena",
@@ -827,8 +827,8 @@
       "department_ids": [
         "od-68341bac730e722100cfb1337ab565e5"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "General Counsel",
+      "is_activated": null
     },
     {
       "name": "Dawen",
@@ -841,8 +841,8 @@
       "department_ids": [
         "od-6af8f53b1c1b4cd2ec9fd9433a4e680c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Responsible Officer",
+      "is_activated": null
     },
     {
       "name": "Paul",
@@ -855,8 +855,8 @@
       "department_ids": [
         "od-6af8f53b1c1b4cd2ec9fd9433a4e680c"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Responsible Officer",
+      "is_activated": null
     },
     {
       "name": "Nancy Chiang",
@@ -869,8 +869,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Compliance Monitoring Analyst",
+      "is_activated": null
     },
     {
       "name": "Eugenia Basile",
@@ -883,8 +883,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Compliance Officer (AML Monitoring & Reporting)",
+      "is_activated": null
     },
     {
       "name": "Federico Vicuña - LATAM L&C",
@@ -897,13 +897,13 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Compliance Analyst & Legal",
+      "is_activated": null
     },
     {
       "name": "Rodrigo",
       "en_name": "",
-      "email": "",
+      "email": "rodrigo@galactic.holdings",
       "open_id": "ou_f2ad1c02bed67ed2976ccce675a1ee14",
       "union_id": "on_b49f18e3bdeb0334ccd54c815c804867",
       "user_id": null,
@@ -911,8 +911,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Principal Compliance Officer",
+      "is_activated": null
     },
     {
       "name": "Jazmín Nairn",
@@ -925,8 +925,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": null,
+      "is_activated": null
     },
     {
       "name": "Julieta Martin",
@@ -939,8 +939,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Compliance Officer",
+      "is_activated": null
     },
     {
       "name": "Tania Contreras",
@@ -953,8 +953,8 @@
       "department_ids": [
         "od-6559338f1f690912ce1a9e7b4e545d33"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Legal & Licensing Manager",
+      "is_activated": null
     },
     {
       "name": "Ulises Rojas",
@@ -967,8 +967,8 @@
       "department_ids": [
         "od-6559338f1f690912ce1a9e7b4e545d33"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Legal Counsel",
+      "is_activated": null
     },
     {
       "name": "Maggie Wu",
@@ -981,8 +981,8 @@
       "department_ids": [
         "0"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "CEO",
+      "is_activated": null
     },
     {
       "name": "Violin",
@@ -995,8 +995,8 @@
       "department_ids": [
         "0"
       ],
-      "is_activated": null,
-      "job_title": null
+      "job_title": "Head of AI",
+      "is_activated": null
     },
     {
       "name": "Joey He",
@@ -1009,8 +1009,8 @@
       "department_ids": [
         "od-acb3b6a8ec757d8b611998135456f342"
       ],
-      "is_activated": true,
-      "job_title": "Data Analytics Manager"
+      "job_title": "Data Analytics Manager",
+      "is_activated": true
     },
     {
       "name": "John Besio",
@@ -1023,8 +1023,8 @@
       "department_ids": [
         "od-367e3bbc96e95f559a735fcc47162aa4"
       ],
-      "is_activated": true,
-      "job_title": "People & Talent Manager"
+      "job_title": "People & Talent Manager",
+      "is_activated": true
     },
     {
       "name": "Mariana Ruiz Moreno",
@@ -1037,8 +1037,8 @@
       "department_ids": [
         "od-367e3bbc96e95f559a735fcc47162aa4"
       ],
-      "is_activated": true,
-      "job_title": "Senior HR Business Partner"
+      "job_title": "Senior HR Business Partner",
+      "is_activated": true
     },
     {
       "name": "Graham Zhou - L & C",
@@ -1051,8 +1051,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": true,
-      "job_title": "Compliance Officer"
+      "job_title": "Compliance Officer",
+      "is_activated": true
     },
     {
       "name": "Joanne Jiao",
@@ -1065,8 +1065,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": true,
-      "job_title": "Compliance Officer"
+      "job_title": "Compliance Officer",
+      "is_activated": true
     },
     {
       "name": "Pedro Pompeu Mendes Ferreira",
@@ -1079,8 +1079,8 @@
       "department_ids": [
         "od-df8b30c9e59ac49d6e016514bf088fc8"
       ],
-      "is_activated": true,
-      "job_title": "Compliance Officer"
+      "job_title": "Compliance Officer",
+      "is_activated": true
     },
     {
       "name": "Rodrigo Moreira Corrêa",
@@ -1093,8 +1093,8 @@
       "department_ids": [
         "od-2ceb613d8772bba783dbd4461a462c7f"
       ],
-      "is_activated": true,
-      "job_title": "Country Manager"
+      "job_title": "Country Manager",
+      "is_activated": true
     },
     {
       "name": "Rudy Li - P&E",
@@ -1107,8 +1107,8 @@
       "department_ids": [
         "od-e0787c41d679112c26ee4182fa681649"
       ],
-      "is_activated": true,
-      "job_title": "Data Engineer"
+      "job_title": "Data Engineer",
+      "is_activated": true
     },
     {
       "name": "Liang Cui - P&E",
@@ -1121,8 +1121,8 @@
       "department_ids": [
         "od-32fcbb981c04a0feb0fed44b2ba31013"
       ],
-      "is_activated": true,
-      "job_title": "Senior QA Engineer"
+      "job_title": "Senior QA Engineer",
+      "is_activated": true
     },
     {
       "name": "André Spolaor",
@@ -1135,8 +1135,8 @@
       "department_ids": [
         "od-882f8d4c01a5e77bb956e42e67b8e36b"
       ],
-      "is_activated": true,
-      "job_title": "Customer Success Manager"
+      "job_title": "Customer Success Manager",
+      "is_activated": true
     },
     {
       "name": "Danny Pan - Sales",
@@ -1149,8 +1149,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": true,
-      "job_title": "AE Manager"
+      "job_title": "AE Manager",
+      "is_activated": true
     },
     {
       "name": "Jeffrey Hu",
@@ -1163,8 +1163,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Tianyang Ni - Sales",
@@ -1177,8 +1177,8 @@
       "department_ids": [
         "od-c248d3ff2ff1d9b641652542e8d1ef56"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Daniel Santin",
@@ -1191,8 +1191,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "David Alvarez Tostado Ortiz",
@@ -1205,8 +1205,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Jaime Sotomayor",
@@ -1219,8 +1219,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Jennifer Palomino",
@@ -1233,8 +1233,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Jonathan Asti Castillo",
@@ -1247,8 +1247,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Juan Felipe Gómez Patiño",
@@ -1261,8 +1261,8 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
     },
     {
       "name": "Ximena Benitez",
@@ -1275,8 +1275,117 @@
       "department_ids": [
         "od-5b0bb047740dc0e73826e720cdb96414"
       ],
-      "is_activated": true,
-      "job_title": "Account Executive"
+      "job_title": "Account Executive",
+      "is_activated": true
+    },
+    {
+      "name": "Felix Luo - P&E",
+      "en_name": "",
+      "email": "felix.luo@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_89b8d79f211b90beac65e0c1d30c38a6",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Senior Backend Engineer",
+      "is_activated": true
+    },
+    {
+      "name": "Aaron Li - Sales",
+      "en_name": "",
+      "email": "aaron.li@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_e9e81e532315a32a26b573c7d8ac5c35",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Account Executive",
+      "is_activated": true
+    },
+    {
+      "name": "Diogo Gonçalves",
+      "en_name": "",
+      "email": "diogo.goncalves@velafi.com",
+      "open_id": "",
+      "union_id": "on_200bb3f2216fc6149dfdb16bbfe8a440",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Account Executive",
+      "is_activated": true
+    },
+    {
+      "name": "Martin Pinasco",
+      "en_name": "",
+      "email": "martinpinasco@hotmail.com",
+      "open_id": "",
+      "union_id": "on_591b5b3ff4e95ce4ac77952719f607c7",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Sr Treasury & Reconciliation Specialist",
+      "is_activated": true
+    },
+    {
+      "name": "Gai Liu - Sales",
+      "en_name": "",
+      "email": "gai.liu@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_5962bce6deda1c43787ba3b29a087c07",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Account Executive",
+      "is_activated": true
+    },
+    {
+      "name": "Mauricio Rossini",
+      "en_name": "",
+      "email": "mauricio.rossini@velafi.com",
+      "open_id": "",
+      "union_id": "on_0ad23ec8e58c81d03200774707865aa4",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "",
+      "is_activated": true
+    },
+    {
+      "name": "Crystal Wang - Treasury & Liquidity",
+      "en_name": "",
+      "email": "crystal.wang@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_75330c695d0d1bc8674dab4f2e1395e8",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Treasury Operations Specialist",
+      "is_activated": true
+    },
+    {
+      "name": "Gabriela Gallegos",
+      "en_name": "",
+      "email": "gabriela.gallegos@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_24a799f4d998887ee5062620b30a9b86",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Account Executive",
+      "is_activated": true
+    },
+    {
+      "name": "Sebastian Celis",
+      "en_name": "",
+      "email": "sebastian.celis@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_1c3440eace630d28c70f23f816e2c233",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "Account Executive",
+      "is_activated": true
     }
-  ]
+  ],
+  "source": "intel.active_roster + nas_ontology authoritative bindings"
 }
