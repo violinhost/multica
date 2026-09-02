@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { paths } from "@multica/core/paths";
@@ -312,6 +312,15 @@ describe("LoginPage (Velafi redirect-only)", () => {
 
   // Regression MUL-1080: desktop handoff continues to work.
   it("mints a token and deep-links to Desktop when authed + platform=desktop", async () => {
+
+  // Shared LoginPage behavior is canonical in
+  // packages/views/auth/login-page.test.tsx. This wrapper suite only owns web
+  // platform handoff and redirect behavior.
+
+  // Regression: MUL-1080 — if the user is already authenticated on the web
+  // and the Desktop app redirects them to /login?platform=desktop, the web
+  // must exchange the cookie session for a bearer token and hand it off via
+  // the multica:// deep link, not silently redirect to the workspace page.
     searchParamsState.params = new URLSearchParams({ platform: "desktop" });
     authStateRef.state.user = {
       id: "u1",
