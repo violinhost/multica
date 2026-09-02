@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-09-02T04:21:34.611586+00:00",
+  "generated_at": "2026-09-02T16:13:26.897561+00:00",
   "app_id": "cli_a97f9e7ed438de15",
-  "count": 100,
+  "count": 102,
   "users": [
     {
       "name": "Holiday",
@@ -1384,6 +1384,30 @@
       "mobile": null,
       "department_ids": [],
       "job_title": "Account Executive",
+      "is_activated": true
+    },
+    {
+      "name": "Asher Peng",
+      "en_name": "",
+      "email": "asher.peng@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_427e54a2388281281bc88454efa22953",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "",
+      "is_activated": true
+    },
+    {
+      "name": "Eric Geng",
+      "en_name": "",
+      "email": "eric.geng@galactic.holdings",
+      "open_id": "",
+      "union_id": "on_fb078dbb89ded4e0242384408b4ac12d",
+      "user_id": null,
+      "mobile": null,
+      "department_ids": [],
+      "job_title": "BD Manager",
       "is_activated": true
     }
   ],
