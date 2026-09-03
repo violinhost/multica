@@ -567,6 +567,28 @@ INSERT INTO channel_media_pending_object (
 )
 VALUES ($1, $2, gen_random_uuid(), 's3://workspace-delete/tenant-isolation')
 `, fixture.mediaKey, fixture.workspaceID)
+		dbfx.Exec(t, `
+INSERT INTO issue_orchestration_projection (
+    issue_id, workspace_id, schema_version, producer, producer_installation_id,
+    receipt_id, receipt_digest, workflow_id, stage, role, substate, reason_code,
+    since, elapsed_seconds, sla_posture, route_generation, native_status_key,
+    native_status_category, native_status_definition_id, next_action_code,
+    issue_revision
+) VALUES (
+    $1, $2, 1, 'automultica', gen_random_uuid(), 'workspace-delete-receipt',
+    'workspace-delete-digest', 'workspace-delete-workflow', 'executing',
+    'worker', 'running', 'workspace_delete_test', now(), 0, 'within_sla', 1,
+    'todo', 'in_progress', gen_random_uuid(), 'wait', 1
+)
+`, fixture.issueID, fixture.workspaceID)
+		dbfx.Exec(t, `
+INSERT INTO issue_orchestration_projection_receipt (
+    producer_installation_id, receipt_id, receipt_digest, issue_id, route_generation
+)
+SELECT producer_installation_id, receipt_id, receipt_digest, issue_id, route_generation
+FROM issue_orchestration_projection
+WHERE issue_id = $1
+`, fixture.issueID)
 	}
 
 	request := newRequest(http.MethodDelete, "/api/workspaces/"+targetWorkspaceID, nil)
@@ -574,13 +596,14 @@ VALUES ($1, $2, gen_random_uuid(), 's3://workspace-delete/tenant-isolation')
 	testutil.Call(t, testHandler.DeleteWorkspace, request).Want(http.StatusNoContent)
 
 	for table, predicate := range map[string]string{
-		"workspace":                    "id",
-		"issue":                        "workspace_id",
-		"comment":                      "workspace_id",
-		"inbox_item":                   "workspace_id",
-		"runtime_profile":              "workspace_id",
-		"task_usage_hourly_dirty":      "workspace_id",
-		"channel_media_pending_object": "workspace_id",
+		"workspace":                      "id",
+		"issue":                          "workspace_id",
+		"comment":                        "workspace_id",
+		"inbox_item":                     "workspace_id",
+		"runtime_profile":                "workspace_id",
+		"task_usage_hourly_dirty":        "workspace_id",
+		"channel_media_pending_object":   "workspace_id",
+		"issue_orchestration_projection": "workspace_id",
 	} {
 		var count int
 		dbfx.QueryRow(t, `
@@ -588,6 +611,28 @@ SELECT COUNT(*) FROM `+table+` WHERE `+predicate+` = $1
 `, neighborWorkspaceID).Scan(&count)
 		if count != 1 {
 			t.Fatalf("neighbor %s rows = %d, want 1", table, count)
+		}
+	}
+	for table := range map[string]struct{}{
+		"issue_orchestration_projection":         {},
+		"issue_orchestration_projection_receipt": {},
+	} {
+		var count int
+		dbfx.QueryRow(t, `
+SELECT COUNT(*)
+FROM `+table+`
+WHERE issue_id = $1
+`, fixtures[1].issueID).Scan(&count)
+		if count != 1 {
+			t.Fatalf("neighbor %s rows = %d, want 1", table, count)
+		}
+		dbfx.QueryRow(t, `
+SELECT COUNT(*)
+FROM `+table+`
+WHERE issue_id = $1
+`, fixtures[0].issueID).Scan(&count)
+		if count != 0 {
+			t.Fatalf("deleted workspace %s rows = %d, want 0", table, count)
 		}
 	}
 

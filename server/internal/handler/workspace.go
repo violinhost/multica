@@ -1244,6 +1244,13 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceLeafData(ctx, requester.WorkspaceID) },
 		},
 		{
+			// Projection receipts are issue-keyed and current projections are
+			// workspace-keyed. Both must be swept before issue roots and plugin
+			// installations without restoring migration 377 foreign keys/cascades.
+			name: "delete orchestration projection data",
+			run:  func() error { return qtx.DeleteWorkspaceOrchestrationProjectionData(ctx, requester.WorkspaceID) },
+		},
+		{
 			name: "delete autopilot runs",
 			run:  func() error { return qtx.DeleteWorkspaceAutopilotRuns(ctx, requester.WorkspaceID) },
 		},

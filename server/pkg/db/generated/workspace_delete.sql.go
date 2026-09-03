@@ -479,6 +479,27 @@ func (q *Queries) DeleteWorkspaceLeafData(ctx context.Context, workspaceID pgtyp
 	return err
 }
 
+const deleteWorkspaceOrchestrationProjectionData = `-- name: DeleteWorkspaceOrchestrationProjectionData :exec
+WITH ws_issues AS MATERIALIZED (
+    SELECT id FROM issue WHERE workspace_id = $1
+),
+deleted_receipts AS (
+    DELETE FROM issue_orchestration_projection_receipt
+    WHERE issue_id IN (SELECT id FROM ws_issues)
+)
+DELETE FROM issue_orchestration_projection
+WHERE issue_orchestration_projection.workspace_id = $1
+`
+
+// Projection receipts have no workspace_id, so remove them through the
+// workspace's issue ids before deleting the current projection rows. The
+// projection rows are independently workspace-scoped, which preserves tenant
+// isolation without relying on foreign keys or cascades.
+func (q *Queries) DeleteWorkspaceOrchestrationProjectionData(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceOrchestrationProjectionData, workspaceID)
+	return err
+}
+
 const deleteWorkspacePluginData = `-- name: DeleteWorkspacePluginData :exec
 WITH installations AS MATERIALIZED (
     SELECT plugin_installation.id

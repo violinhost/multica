@@ -487,6 +487,21 @@ SET state = CASE
     last_error = NULL
 WHERE channel_media_pending_object.workspace_id = $1;
 
+-- name: DeleteWorkspaceOrchestrationProjectionData :exec
+-- Projection receipts have no workspace_id, so remove them through the
+-- workspace's issue ids before deleting the current projection rows. The
+-- projection rows are independently workspace-scoped, which preserves tenant
+-- isolation without relying on foreign keys or cascades.
+WITH ws_issues AS MATERIALIZED (
+    SELECT id FROM issue WHERE workspace_id = $1
+),
+deleted_receipts AS (
+    DELETE FROM issue_orchestration_projection_receipt
+    WHERE issue_id IN (SELECT id FROM ws_issues)
+)
+DELETE FROM issue_orchestration_projection
+WHERE issue_orchestration_projection.workspace_id = $1;
+
 -- name: DeleteWorkspaceChatMessages :exec
 DELETE FROM chat_message
 WHERE chat_session_id IN (
